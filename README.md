@@ -1,6 +1,6 @@
 <img src="img/mcbrain.png" width="300" height="250">
 
-A Claude plugin (and personal marketplace) for building and operating **McBrain** — a persistent, LLM-maintained personal knowledge base based on [Karpathy's LLM Wiki pattern](https://karpathy.bearblog.dev/) — plus companion skills for running research workflows through Notion. The plugin bundles four cooperating skills so you can install everything in one click from Claude Desktop.
+A Claude plugin for building and operating **McBrain** — a persistent, LLM-maintained personal knowledge base based on [Karpathy's LLM Wiki pattern](https://karpathy.bearblog.dev/) — plus companion skills for running research workflows through Notion. The plugin bundles four cooperating skills so you can install everything in one click from Claude Desktop.
 
 The idea in one sentence: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent markdown wiki that compounds over time. Obsidian is the IDE; Claude is the programmer; McBrain is the codebase.
 
