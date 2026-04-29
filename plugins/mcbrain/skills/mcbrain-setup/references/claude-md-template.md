@@ -6,6 +6,16 @@ This is the schema file for McBrain, the user's personal LLM-maintained knowledg
 
 A personal knowledge base maintained by Claude. Raw sources live in `raw/`. Claude owns and maintains everything in `wiki/`. The user never writes wiki pages — Claude does. The user drops sources, asks questions, and directs the analysis.
 
+## What lives where
+
+Three layers, three jobs:
+
+- **CLAUDE.md** — Claude's operating manual for this vault: schema, page conventions, ingest/query/lint procedures, backup config, MCP plumbing, and registered companion systems (e.g. Notion trackers). Anything Claude needs to *do its job* lives here.
+- **`raw/`** — immutable source documents. Inputs.
+- **`wiki/`** — compiled knowledge derived from `raw/`. Concept pages, entity pages, syntheses. Every page has provenance (`sources:` frontmatter pointing back to `raw/`).
+
+The rule: **if Claude needs it to do its job, it lives in CLAUDE.md; if it's a fact about the world derived from a source, it lives in `wiki/`.** Plumbing (the Notion DB registry, the git remote, the MCP path) does not belong in `wiki/` — wiki pages have provenance and citations, plumbing doesn't. When in doubt, ask which question the content answers: *"how do I operate this vault?"* (CLAUDE.md) vs *"what do we know about X?"* (`wiki/`).
+
 ## Directory layout
 
 ```
@@ -110,7 +120,7 @@ Use when the user has just finished a `notion-research-runner` pass, or referenc
 
 **Hard rule: do not re-research.** Do not spawn research subagents, do not call `notion-research-runner`, do not run web search for the topic. The research is already done — your job is to file it, not redo it.
 
-1. **Find the companion DB.** Read `wiki/notion-databases.md` (registered by `notion-research-db` at creation time) to get the tracker's Notion URL / database ID. If multiple trackers exist for this vault, ask the user which one.
+1. **Find the companion DB.** Look in this CLAUDE.md's `## Notion companion databases` section first — that's the canonical registry, populated by `mcbrain-setup` (Step 8) and by `notion-research-db`. If that section is missing or empty, fall back to `wiki/notion-databases.md` (the legacy location used by older vaults). Capture the database URL / ID. If multiple trackers are registered for this vault, ask the user which one.
 2. **Pull completed task pages.** Query the tracker for rows with Status `In progress` whose page body contains a research run (look for the `## Summary` / `## Key Findings` / `## Sources` section headings the runner writes). If the user named specific tasks, use those instead. Skip rows whose Notion page ID already appears in the `sources:` frontmatter of any wiki page — those have already been ingested.
 3. **Copy to `raw/notes/` verbatim.** For each task, write the page body to `raw/notes/<slug>.md` (slug = lowercased, hyphenated task title). Prepend YAML frontmatter capturing provenance:
 
@@ -215,6 +225,12 @@ Each log entry:
 One-line description of what was done.
 Files touched: wiki/page1.md, wiki/page2.md
 ```
+
+## Notion companion databases
+
+Companion Notion research trackers registered to this vault. The Notion-bridged ingest mode reads this section to find which DB to drain. `mcbrain-setup` (Step 8) populates the first entry; `notion-research-db` adds entries when the user creates additional trackers. Leave the section empty (just the heading + this paragraph) if no Notion DB is paired.
+
+<!-- Entries below — one per database -->
 
 ## Domain
 

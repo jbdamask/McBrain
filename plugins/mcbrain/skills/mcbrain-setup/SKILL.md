@@ -306,13 +306,71 @@ If Claude can read `CLAUDE.md`, the MCP is working. If not, troubleshoot:
 
 ---
 
-## Step 8: Install the companion operating skill
+## Step 8: Notion companion database (optional)
+
+McBrain pairs nicely with a Notion research tracker: a database where the user queues research questions, the `notion-research-runner` skill drains the queue with parallel subagents and writes findings back to each task page, and then the Notion-bridged ingest mode (documented in CLAUDE.md) pulls those findings into `raw/notes/` and onward into the wiki. This step wires up that pairing at setup time so it's already configured the first time the user wants to use it.
+
+This step is **optional**. Skip cleanly if the user doesn't use Notion or doesn't want a tracker right now.
+
+**8a — Check for a Notion MCP connector.** Enumerate available tools and look for ones that perform Notion operations. Match by *capability*, not exact name — many connectors exist (Anthropic's claude.ai Notion connector, Notion's official `@notionhq/notion-mcp-server`, community servers). The capabilities needed here are *search*, *create-database*, and *retrieve-database*; tool names typically contain `notion`, `search`, `database`, or fragments like `API-post-search` / `API-post-database`.
+
+If no Notion-like tools are present, tell the user:
+
+> "I don't see a Notion MCP connector. To pair this McBrain with a Notion research tracker, enable one (Anthropic's claude.ai Notion connector, Notion's official MCP server, or equivalent) and re-run this step. Skipping for now."
+
+Then continue to Step 9 — do not block setup on this.
+
+**8b — Ask what the user wants.**
+
+> "I can pair this McBrain with a Notion research tracker. Three options:
+> 1. **Use an existing Notion database** — paste the URL and I'll register it.
+> 2. **Create a new database** — I'll spin one up with the standard schema (Task name, Status, Priority, Created date, Last updated date, Notes).
+> 3. **Skip** — you can always add one later by running the `notion-research-db` skill.
+> Which would you like?"
+
+If they pick **3 (skip)**, continue to Step 9.
+
+**8c — Existing database.** If they pick option 1, ask for the database URL and a friendly name (default to the database title). Use the Notion search/fetch tool to verify the URL resolves to a real database — if not, surface the error and ask the user to re-paste rather than guessing. Capture:
+
+- `NOTION_DB_NAME` — e.g., "AI Science Research Tracker"
+- `NOTION_DB_URL` — the database URL the user pasted
+- `NOTION_DB_ID` — extract from the URL (the 32-char hex segment, with or without dashes)
+
+**8d — Create a new database.** If they pick option 2, defer to the `notion-research-db` skill: it already knows how to confirm the parent page, create the database with the right schema, and return the URL/ID. Pass through the vault's research topic (default: the vault's name minus the `mcbrain-` prefix) and the `MCP_NAME` so it knows where to register. Capture the same three fields from its return.
+
+The `notion-research-db` skill will also write a registration entry — let it. Step 8e below either *adds* the entry (if the skill didn't, e.g., for the existing-database path) or *verifies* the entry the skill wrote.
+
+**8e — Register in CLAUDE.md.** The canonical location for registered companion databases is a `## Notion companion databases` section in `VAULT_PATH/CLAUDE.md`. Append (creating the section if missing):
+
+```markdown
+## Notion companion databases
+
+- **<NOTION_DB_NAME>**
+  - URL: <NOTION_DB_URL>
+  - Database ID: <NOTION_DB_ID>
+  - Registered: <YYYY-MM-DD — look up today's date, do not guess>
+  - Notes: companion research tracker. The Notion-bridged ingest mode reads this entry to find which DB to drain.
+```
+
+If the section already exists (e.g., the `notion-research-db` skill wrote it during 8d), just verify the entry is present and correct — don't duplicate it.
+
+This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in `wiki/notion-databases.md`; the ingest procedure falls back to that path if the CLAUDE.md section is empty, so both work.
+
+**8f — Commit (Git strategy only).** If backup strategy is git, commit the CLAUDE.md change:
+
+```bash
+cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push
+```
+
+---
+
+## Step 9: Install the companion operating skill
 
 Point the user at the `mcbrain` skill for day-to-day ingest/query/lint operations. It uses the `MCP_NAME` convention to route requests to the right vault — so "find insights from McBrain AI Science" maps to the `mcbrain-ai-science` MCP automatically.
 
 ---
 
-## Step 9: First ingest
+## Step 10: First ingest
 
 Walk the user through their first ingest:
 

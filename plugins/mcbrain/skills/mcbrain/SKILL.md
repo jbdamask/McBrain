@@ -46,6 +46,7 @@ McBrain is a living document. Its conventions evolve as the user refines them, a
 
 The following procedures are specified in the vault's CLAUDE.md and must be followed from there — do not rely on a cached version in this skill:
 
+- **What-lives-where rule** — see CLAUDE.md's `## What lives where` section. CLAUDE.md is for operating instructions and plumbing (schema, procedures, registered companion systems); `wiki/` is for compiled knowledge derived from `raw/` sources. Don't write plumbing into `wiki/` and don't write derived knowledge into CLAUDE.md.
 - **Raw-sources-first rule** — see CLAUDE.md's immutable rule forbidding wiki pages built from search results without a backing file in `raw/`.
 - **Source ingestion paths** — how Obsidian Web Clipper, Claude in Chrome, hand drops, and the Notion research tracker feed the ingest procedure.
 - **Handling PDFs in `raw/papers/`** — the upload → Cowork `pdf` skill → `.md` → figure prose workflow.

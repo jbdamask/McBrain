@@ -81,25 +81,25 @@ The point of this step: future sessions of the `mcbrain` skill (and the `notion-
 
 Operate against the `mcbrain-<topic>` MCP chosen earlier. Do all paths relative to the MCP root (the vault root) — never use absolute filesystem paths.
 
-1. **Read `CLAUDE.md`** at the vault root first. If it documents a convention for registering external resources (a section like `## Notion`, `## Companion databases`, or similar), follow that convention. CLAUDE.md is the source of truth for vault layout; this skill must not invent a new layout if one already exists.
-
-2. **If CLAUDE.md does not specify a convention**, write to `wiki/notion-databases.md`. Create the file if missing; otherwise append. Each entry uses this format:
+1. **Read `CLAUDE.md`** at the vault root first. The canonical registration location is its `## Notion companion databases` section (added by `mcbrain-setup` Step 8 in vaults set up after that step shipped). Append a new entry there:
 
    ```markdown
-   ## <Research Topic> — Research Tracker
-   - **Notion URL:** <database URL>
-   - **Notion database ID:** <database ID>
-   - **Created:** <YYYY-MM-DD>   <!-- look up today's date; do not guess -->
-   - **Notes:** companion research tracker for this vault. Used by the `notion-research-runner` skill.
+   - **<Research Topic> — Research Tracker**
+     - URL: <database URL>
+     - Database ID: <database ID>
+     - Registered: <YYYY-MM-DD>   <!-- look up today's date; do not guess -->
+     - Notes: companion research tracker for this vault. Used by `notion-research-runner` and the Notion-bridged ingest mode.
    ```
+
+   If CLAUDE.md does not yet have a `## Notion companion databases` section (legacy vault), create it just before the `## Domain` section using the same entry format.
+
+2. **Legacy fallback.** If CLAUDE.md cannot be edited (read-only / unexpected layout) and the vault already has a `wiki/notion-databases.md` from an older setup, append to that file instead and tell the user you used the legacy path. Don't scatter files in vaults that have their own conventions — when in doubt, ask the user.
 
 3. **Append to `wiki/log.md`** a one-line entry, matching whatever log format CLAUDE.md prescribes (typical: `- YYYY-MM-DD — registered Notion tracker: <Research Topic> — <URL>`).
 
-4. **Update `wiki/index.md`** to include `notion-databases.md` if it isn't already linked there.
+4. **Update `wiki/index.md`** to mention the registration only if you wrote to `wiki/notion-databases.md` (the legacy path). When the registration lives in CLAUDE.md, no index update is needed — CLAUDE.md is read on every session.
 
 5. **Backup.** Re-read CLAUDE.md's `## Backup` section. If `Strategy: git`, offer to commit and push with a message like `register: notion tracker <Research Topic>`. If `google-drive` or `none`, do not run git operations.
-
-If any of these files don't exist and CLAUDE.md doesn't tell you where they should live, stop and ask the user — don't scatter files into a vault that has its own conventions.
 
 After registration, tell the user: which vault you wrote to, which file(s) you touched, and (if applicable) whether you committed.
 
