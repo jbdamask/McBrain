@@ -87,15 +87,49 @@ Link to related concepts using [[wikilinks]] throughout the text.
 ## Operations
 
 ### Ingest
-When told to ingest a source:
-1. Read the source file in full
-2. Discuss key takeaways (briefly, unless asked for more)
-3. Write or update a source summary page in `wiki/`
-4. Create or update entity and concept pages touched by this source
-5. Update `wiki/index.md` with the new page(s)
-6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source title]`
+
+"Ingest" has two modes. The `mcbrain` skill picks one based on conversation context (see its routing section). Both modes ultimately funnel through the same wiki-update steps below — the difference is where the source comes from.
+
+#### Ingest from raw/
+
+Use when the user says "ingest" with no Notion context, or names a file already in `raw/`.
+
+1. **Find what's unprocessed.** If the user did not name a specific file, scan `raw/` recursively and diff against the `sources:` frontmatter field of every page in `wiki/`. Anything in `raw/` that no wiki page lists as a source is a candidate. List the candidates and confirm with the user before processing more than one or two at a time.
+2. Read each source file in full.
+3. Discuss key takeaways (briefly, unless asked for more).
+4. Write or update a source summary page in `wiki/`.
+5. Create or update entity and concept pages touched by this source.
+6. Update `wiki/index.md` with the new page(s).
+7. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source title]`.
 
 A single source may touch 5-15 wiki pages. That's normal.
+
+#### Ingest from Notion research tracker
+
+Use when the user has just finished a `notion-research-runner` pass, or references the Notion tracker / completed research / those tasks. The `notion-research-runner` skill leaves completed research on Notion task pages with Status `In progress`; this mode pulls that output into `raw/` and then runs the standard wiki-update steps.
+
+**Hard rule: do not re-research.** Do not spawn research subagents, do not call `notion-research-runner`, do not run web search for the topic. The research is already done — your job is to file it, not redo it.
+
+1. **Find the companion DB.** Read `wiki/notion-databases.md` (registered by `notion-research-db` at creation time) to get the tracker's Notion URL / database ID. If multiple trackers exist for this vault, ask the user which one.
+2. **Pull completed task pages.** Query the tracker for rows with Status `In progress` whose page body contains a research run (look for the `## Summary` / `## Key Findings` / `## Sources` section headings the runner writes). If the user named specific tasks, use those instead. Skip rows whose Notion page ID already appears in the `sources:` frontmatter of any wiki page — those have already been ingested.
+3. **Copy to `raw/notes/` verbatim.** For each task, write the page body to `raw/notes/<slug>.md` (slug = lowercased, hyphenated task title). Prepend YAML frontmatter capturing provenance:
+
+   ```yaml
+   ---
+   source: notion-research-tracker
+   notion_url: <task page URL>
+   notion_page_id: <task page ID>
+   tracker: <tracker name>
+   task_title: <task name>
+   research_date: <date the runner wrote the page>
+   captured: YYYY-MM-DD
+   ---
+   ```
+
+   Do not edit, summarize, or reformat the research output. Copy it as-is — `raw/` is immutable history.
+4. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/<slug>.md` files. Cite them in wiki pages exactly the same way you'd cite any other raw source.
+5. **Close the loop in Notion.** After the wiki write succeeds, flip the Notion task's Status to `Done`. If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
+6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
 
 ### Query
 When asked a question against the wiki:
@@ -148,8 +182,9 @@ Sources can arrive in `raw/` through several paths. All feed the same ingest pro
 - **Obsidian Web Clipper** (browser extension) — clips web articles directly into `raw/articles/` as markdown. Fast one-click capture from any tab the user is already on.
 - **Claude in Chrome via Cowork** — when the user asks Claude to ingest a URL, Claude can navigate the page (including authenticated/paywalled ones, since it shares the user's browser session), convert to markdown, and save to `raw/articles/<slug>.md`.
 - **Hand drops** — the user drags PDFs into `raw/papers/`, pastes notes into `raw/notes/`, or otherwise adds files manually.
+- **Notion research tracker** — completed research run by `notion-research-runner` lives on Notion task pages. The Notion-bridged ingest mode (see `## Operations → Ingest from Notion research tracker`) copies those page bodies into `raw/notes/<slug>.md` with provenance frontmatter, then proceeds like any other raw source. Never re-run the research — the output already exists.
 
-Treat all of these identically. Run the ingest procedure regardless of how the source got there.
+Treat all of these identically once the file is on disk. Run the standard ingest procedure regardless of how the source got there.
 
 ## Handling images in sources
 

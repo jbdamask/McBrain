@@ -23,8 +23,6 @@ This repo is itself a Claude plugin marketplace. Install it from Claude Desktop:
 3. Install the **mcbrain** plugin from the marketplace. All four skills are activated together.
 4. Open a new Claude Cowork session and ask it to create a new McBrain for your topic of interest.
 
-> **Legacy install (individual skills):** the pre-built `.skill` files in [`dist/`](./dist) still work if you'd rather upload them one-by-one via Settings → Skills. The plugin path above is recommended.
-
 ## Building Your Knowledgebase
 I recommend you make many McBrains for whatever topics you want to build a knowledgebase around. This is what I do. Give them names like mcbrain-ai-research or mcbrain-house-stuff. Claude will be able to figure out which one to use based on your context.
 
@@ -82,7 +80,6 @@ McBrain/
 │           ├── mcbrain/
 │           ├── notion-research-db/
 │           └── notion-research-runner/
-├── dist/                         # legacy: pre-built individual .skill files
 ├── README.md
 └── LICENSE
 ```

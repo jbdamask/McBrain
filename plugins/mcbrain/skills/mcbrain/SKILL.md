@@ -47,11 +47,28 @@ McBrain is a living document. Its conventions evolve as the user refines them, a
 The following procedures are specified in the vault's CLAUDE.md and must be followed from there — do not rely on a cached version in this skill:
 
 - **Raw-sources-first rule** — see CLAUDE.md's immutable rule forbidding wiki pages built from search results without a backing file in `raw/`.
-- **Source ingestion paths** — how Obsidian Web Clipper, Claude in Chrome, and hand drops feed the ingest procedure.
+- **Source ingestion paths** — how Obsidian Web Clipper, Claude in Chrome, hand drops, and the Notion research tracker feed the ingest procedure.
 - **Handling PDFs in `raw/papers/`** — the upload → Cowork `pdf` skill → `.md` → figure prose workflow.
 - **Handling images in sources** — text-first reading, filtering decorative images.
 
 If CLAUDE.md and this skill ever disagree, CLAUDE.md wins.
+
+## Routing "ingest" to the right mode
+
+The word **ingest** in McBrain has two valid meanings, and Claude must pick the right one before acting. Picking wrong is the most common bug — if the user is talking about completed Notion research and Claude treats it as a generic ingest, it ends up re-running the research subagents. Do not do that.
+
+Decide between these two modes after reading CLAUDE.md, **before** doing any work:
+
+**Mode A — Notion-bridged ingest.** Use when any of these are true:
+- The current conversation has involved the `notion-research-runner` or `notion-research-db` skill, or research tasks were just completed in a Notion tracker registered to this vault.
+- The user references "the Notion pages", "the research", "those tasks", "the tracker", or names a research tracker explicitly.
+- The user says something like "ingest the research" / "ingest from Notion" / "pull the Notion findings into the wiki".
+
+In this mode, the source pages live in Notion, not on disk. The first step is to copy them into `raw/` (typically `raw/notes/`), then run the standard ingest on the resulting files. **Hard rule: never spawn research subagents and never call `notion-research-runner` from this mode — the research is already done.** Follow the procedure documented in CLAUDE.md under `## Operations → Ingest from Notion research tracker`.
+
+**Mode B — Standard ingest.** Use when there is no Notion context and the user says "ingest" with no source argument, or names a specific file already in `raw/`. Scan `raw/` for files that aren't yet referenced as a source in any `wiki/*.md` page, list them, and process per CLAUDE.md's `## Operations → Ingest from raw/` section.
+
+**Stating the choice.** Always tell the user which mode you picked and why, in one line, before you start work — e.g. *"Treating this as a Notion-bridged ingest because we just ran the research runner against the CRISPR tracker."* If both signals are present (Notion context **and** new files in `raw/`), or neither (no Notion context **and** `raw/` has nothing unprocessed), ask the user which they meant rather than guessing.
 
 ## Backup and version control
 
