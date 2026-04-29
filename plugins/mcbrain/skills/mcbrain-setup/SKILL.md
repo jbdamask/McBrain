@@ -185,9 +185,25 @@ For Git:
 - Strategy: git
 - Remote: REPO_URL
 - Push command: `git push origin main`
-- To push after a session: run the push command from the vault directory in Terminal
-- To revert a bad edit: `git log --oneline` to find the commit, then `git checkout <hash> -- wiki/<filename>.md`
+
+### How Claude handles git for this vault
+
+**Claude must not run git commands against this vault.** The vault is mounted via the filesystem MCP, which holds open handles that race with git. When Claude (operating through the vault MCP) runs `git add` / `git commit` / `git push`, the call can leave a stale `.git/index.lock` file that the user has to remove manually before any further git work succeeds. Bad UX.
+
+Instead, after meaningful operations (ingest, lint, batch synth), Claude **presents** the commands to the user as a copy-paste block. The user runs them in their own terminal:
+
+\`\`\`
+cd VAULT_PATH && git add -A && git commit -m "<message>" && git push origin main
+\`\`\`
+
+Mirror the log entry in the commit message: `ingest: <source title>`, `lint: <summary>`, `synth: <topic>`. Good commit messages are short and describe the operation, not the diff.
+
+### Recovery
+- To revert a bad edit, present: `cd VAULT_PATH && git log --oneline` to find the commit, then `git checkout <hash> -- wiki/<filename>.md`.
+- If a stale `.git/index.lock` exists from a prior interrupted run, present: `rm VAULT_PATH/.git/index.lock`.
 ```
+
+When you write this section into the actual `CLAUDE.md`, replace the literal placeholder `VAULT_PATH` with the user's confirmed path and unescape the backticks around the fenced code block (i.e. write a real triple-backtick fence, not the `\`\`\`` shown above — the escape is only there to avoid breaking *this* skill's markdown).
 
 For Google Drive:
 ```markdown
@@ -356,7 +372,7 @@ If the section already exists (e.g., the `notion-research-db` skill wrote it dur
 
 This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in `wiki/notion-databases.md`; the ingest procedure falls back to that path if the CLAUDE.md section is empty, so both work.
 
-**8f — Commit (Git strategy only).** If backup strategy is git, commit the CLAUDE.md change:
+**8f — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
 
 ```bash
 cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push

@@ -207,16 +207,6 @@ Articles clipped from the web often contain inline image references (Obsidian We
 
 Skip decorative images — they waste context.
 
-## Version control
-
-The vault is a git repository. After any significant operation (ingest, lint pass, batch of edits), suggest a commit with a descriptive message. If the user agrees, run:
-
-```
-cd <VAULT_PATH> && git add -A && git commit -m "<message>"
-```
-
-Good commit messages mirror the log entry: `ingest: <source title>`, `lint: <summary>`, `synth: <topic>`. Git is the escape hatch — if an edit goes sideways, `git diff` and `git restore` are the user's friends.
-
 ## Log format
 
 Each log entry:

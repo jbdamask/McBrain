@@ -77,13 +77,15 @@ After reading CLAUDE.md, check the `## Backup` section for the `Strategy:` value
 
 **Strategy: `git`**
 
-The vault is a git repository. After meaningful operations (ingest, lint, batch synth), offer to commit and push:
+The vault is a git repository, but **Claude must not run git commands against it.** The filesystem MCP holds open handles that race with git and leave stale `.git/index.lock` files when commits are issued through Claude — the user then has to clear the lock manually before any further git work works. CLAUDE.md's `## Backup → How Claude handles git for this vault` section is the source of truth on this; follow it.
+
+After meaningful operations (ingest, lint, batch synth), **present** the commit/push commands to the user in a copy-paste block — do not execute them. Example:
 
 ```
 cd <vault_path> && git add -A && git commit -m "<message>" && git push origin main
 ```
 
-Mirror the log entry in the commit message: `ingest: <title>`, `lint: <summary>`, `synth: <topic>`. The CLAUDE.md `## Backup` section has the exact remote URL and push command.
+Mirror the log entry in the commit message: `ingest: <title>`, `lint: <summary>`, `synth: <topic>`. The user runs the block in their own terminal.
 
 **Strategy: `google-drive`**
 

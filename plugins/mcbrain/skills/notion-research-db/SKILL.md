@@ -99,7 +99,7 @@ Operate against the `mcbrain-<topic>` MCP chosen earlier. Do all paths relative 
 
 4. **Update `wiki/index.md`** to mention the registration only if you wrote to `wiki/notion-databases.md` (the legacy path). When the registration lives in CLAUDE.md, no index update is needed — CLAUDE.md is read on every session.
 
-5. **Backup.** Re-read CLAUDE.md's `## Backup` section. If `Strategy: git`, offer to commit and push with a message like `register: notion tracker <Research Topic>`. If `google-drive` or `none`, do not run git operations.
+5. **Backup.** Re-read CLAUDE.md's `## Backup` section. If `Strategy: git`, **present** the commit/push block to the user as a copy-paste fence — do not run git directly (the filesystem MCP races with git and can leave a stale `.git/index.lock`; see CLAUDE.md's `## Backup → How Claude handles git for this vault`). A good message: `register: notion tracker <Research Topic>`. If `google-drive` or `none`, no git operations are needed at all.
 
 After registration, tell the user: which vault you wrote to, which file(s) you touched, and (if applicable) whether you committed.
 
