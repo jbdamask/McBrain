@@ -1,0 +1,26 @@
+{
+  "name": "mcbrain",
+  "owner": {
+    "name": "John Damask",
+    "email": "jbdamask@gmail.com"
+  },
+  "metadata": {
+    "description": "McBrain — a persistent, LLM-maintained personal knowledge base built on Karpathy's LLM Wiki pattern, plus companion skills for running research workflows through Notion.",
+    "version": "1.0.0",
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "mcbrain",
+      "source": "./plugins/mcbrain",
+      "description": "Build and operate McBrain — a personal LLM-maintained knowledge base in Obsidian — with companion skills for spinning up Notion research trackers and executing queued research tasks back into the wiki.",
+      "version": "1.0.0",
+      "author": {
+        "name": "John Damask",
+        "email": "jbdamask@gmail.com"
+      },
+      "category": "knowledge-management",
+      "keywords": ["knowledge-base", "obsidian", "wiki", "second-brain", "notion", "research", "llm-wiki"]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "mcbrain",
+  "version": "1.0.0",
+  "description": "Build and operate McBrain — a persistent, LLM-maintained personal knowledge base based on Karpathy's LLM Wiki pattern. Bundles four cooperating skills: one-shot vault setup, day-to-day vault operations (ingest/query/lint/synth), Notion research-tracker creation (registered back into the vault), and a queue runner that drains research tasks and writes findings back to Notion.",
+  "author": {
+    "name": "John Damask"
+  },
+  "keywords": ["knowledge-base", "obsidian", "wiki", "second-brain", "notion", "research", "llm-wiki"]
+}
