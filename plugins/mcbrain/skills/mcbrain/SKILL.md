@@ -40,28 +40,23 @@ If `CLAUDE.md` is missing or unreadable, stop and tell the user — something is
 
 ## Step 2.5: Migration check (query engine)
 
-Before doing any procedural work, verify the vault has the query engine provisioned. This is the **only** orchestration concern this skill owns for the query engine — all the actual query and indexing procedures live in CLAUDE.md (rewritten by `mcbrain-ops migrate` to delegate into the `mcbrain-ops` skill).
+Before doing any procedural work, verify the vault is on the current MCP-based query engine. This is the **only** orchestration concern this skill owns for the query engine — all the actual query and indexing procedures live in CLAUDE.md (patched by the `mcbrain-engine` MCP's `migrate` tool to delegate into that MCP).
 
-Check both:
+Read CLAUDE.md's `## Query engine` section and pick exactly one of three states:
 
-1. The vault has a `.mcbrain/` directory (with `bin/mcbrain_ops.py` inside). The vault MCP can confirm via a directory listing.
-2. The `CLAUDE.md` you just read contains a `## Query engine` section.
+1. **No `## Query engine` section** → the vault predates the engine entirely. Offer migration; on accept, call the `mcbrain-engine` MCP's `migrate` tool with `vault_path=<vault>` (and optionally `vault_name=<MCP name>`).
+2. **`mode: lexical+semantic`** (the legacy PR #4 marker, **no** `(mcp)` suffix) → the vault was migrated to the per-vault Python layout. Offer "upgrade to the MCP-based engine"; on accept, call the `mcbrain-engine` MCP's `migrate` tool — it preserves `index.db` when the embedding model+dim still match and removes the legacy `bin/`/`venv/` directories.
+3. **`mode: lexical+semantic (mcp)`** → already on the new architecture. No action — proceed with the user's original request.
 
-If **either is missing**, the vault was set up before the query engine landed. Offer the user a one-shot migration:
+Migration prompt (states 1 and 2):
 
-> "This vault was set up before the query engine landed. Want me to upgrade it now? This creates `<vault>/.mcbrain/`, installs the indexer dependencies into a per-vault Python venv, builds the initial search index, and updates this vault's `CLAUDE.md`. Takes about a minute, ~30 MB model download the first time across all your McBrains. Existing wiki pages aren't touched."
+> "This vault is on an older query-engine layout. Want me to upgrade it now? I'll call the `mcbrain-engine` MCP's `migrate` tool, which registers this vault, patches its `CLAUDE.md`, and (if a legacy `.mcbrain/{bin,venv}/` exists) collapses it after preserving the index when compatible. Takes seconds — wiki pages aren't touched. **If the `mcbrain-engine` MCP isn't registered in this harness, I'll surface that and you'll need to re-run `mcbrain-setup` Step 5.6.**"
 
-On accept, run from the agent's environment (system shell, not the vault MCP — the migrate command needs to create files outside the MCP root and shell out to `pip`):
+After migration completes, **re-read `CLAUDE.md`** (it has been patched) and proceed with the user's original request using the now-updated procedure.
 
-```bash
-python3 <plugin_root>/plugins/mcbrain/skills/mcbrain-ops/references/mcbrain_ops.py migrate --vault <vault_path>
-```
+If the user declines migration, continue in lexical-only fallback mode: the `mcbrain-engine` MCP's `query` tool falls back to ripgrep when no index is provisioned, but with reduced recall on paraphrased questions. Let the user know that's what's happening and that they can run migration any time.
 
-Surface the output. After migration completes, **re-read `CLAUDE.md`** (it has been patched) and proceed with the user's original request using the now-updated procedure.
-
-If the user declines migration, continue in lexical-only fallback mode: the `mcbrain-ops query` invocation in CLAUDE.md will still work (it falls back to ripgrep when no index is provisioned) but with reduced recall on paraphrased questions. Let the user know that's what's happening and that they can run migration any time.
-
-**Architectural principle (do not violate):** procedures (how to query, when to sync the index, how to ingest) live in CLAUDE.md. This skill is a router — it catches intent, routes to the right vault, runs the migration check, then defers to CLAUDE.md. Do not add query routing logic, post-edit `index sync` orchestration, or any other procedural step to this skill — they belong in CLAUDE.md and `mcbrain-ops` respectively.
+**Architectural principle (do not violate):** procedures (how to query, when to sync the index, how to ingest) live in CLAUDE.md. This skill is a router — it catches intent, routes to the right vault, runs the migration check, then defers to CLAUDE.md. Do not add query routing logic, post-edit `index_sync` orchestration, or any other procedural step to this skill — they belong in CLAUDE.md and the `mcbrain-engine` MCP respectively.
 
 ## Why this two-layer design
 

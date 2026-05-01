@@ -230,7 +230,7 @@ After all files are written:
 ```bash
 cd VAULT_PATH
 git init -b main
-printf '.DS_Store\n.obsidian/workspace*\n.obsidian/cache\n.mcbrain/venv/\n.mcbrain/index.db\n.mcbrain/index.db-*\n__pycache__/\n' > .gitignore
+printf '.DS_Store\n.obsidian/workspace*\n.obsidian/cache\n.mcbrain/index.db\n.mcbrain/index.db-*\n__pycache__/\n' > .gitignore
 git remote add origin REPO_URL
 git add -A
 git commit -m "init: MCP_NAME vault scaffolding"
@@ -239,7 +239,7 @@ git push -u origin main
 
 Confirm the push succeeded. If it fails, check that `gh auth login` completed correctly and that `REPO_URL` is reachable.
 
-The gitignore covers everything in `<vault>/.mcbrain/` that Step 8.5 will create *except* `.mcbrain/bin/`. The `bin/` directory holds the indexer script and SQL schema, which **are tracked** so the per-vault setup is reproducible from a fresh clone (a new machine pulls the repo, re-runs `mcbrain-ops migrate`, and gets back to a working query engine without redownloading the script). The venv and index database are not tracked because they're either platform-specific or rebuildable from the wiki content. See `mcbrain-ops/references/gitignore-snippet.md` for the per-line rationale.
+The gitignore excludes the per-vault `.mcbrain/index.db` and its SQLite WAL/SHM sidecars — those are rebuildable from `wiki/` content. Nothing else under `.mcbrain/` exists in the v2 layout: the engine source and venv live at the platform-resolved runtime root (see Step 5.5), not per-vault. A fresh clone on a new machine just runs `mcbrain-setup` once to install the runtime, then queries work immediately.
 
 ---
 
@@ -289,47 +289,80 @@ Show the user the final config before writing it and ask them to confirm.
 
 ---
 
-## Step 5.5: Detect query-engine prerequisites (do not install)
+## Step 5.5: Provision the McBrain query engine runtime, once-per-machine
 
-McBrain ships a hybrid lexical + semantic query engine (the `mcbrain-ops` skill) that gets provisioned in Step 8.5. It needs `python3` (>=3.10) for the per-vault venv and benefits from `ripgrep` (`rg`) for the lexical fast path. **McBrain never invokes a system package manager.** This step only *detects* what's available and *surfaces* platform-appropriate install instructions; the user installs the missing pieces themselves.
+McBrain v2 ships a single global stdio MCP server, `mcbrain-engine`, that
+serves every McBrain vault on this machine. It lives at the platform-resolved
+runtime root (`~/Library/Application Support/mcbrain-engine` on macOS,
+`%LOCALAPPDATA%\mcbrain-engine` on Windows, `~/.local/share/mcbrain-engine`
+on Linux). Install once; reuse for every additional McBrain.
 
-**Detection has to work on every host**: macOS, Linux, Windows. Don't assume zsh/bash — the user could be in PowerShell, Git Bash, WSL, or cmd. Use `python3 --version` (then `python --version` as a fallback and parse for `Python 3.x`), and `rg --version`.
+All OS branching, env detection, and file copying is handled by
+`setup_bootstrap.py` (under `plugins/mcbrain/mcp-server/`). This step just
+runs that script through the Bash tool — same invocation whether the
+underlying shell is zsh, Git Bash, WSL, or `cmd.exe`.
 
-### Detect `python3`
-
-```bash
-python3 --version 2>/dev/null || python --version 2>/dev/null
-```
-
-If neither prints `Python 3.x` (>=3.10), surface platform-appropriate guidance and continue:
-
-- **macOS** — install from [python.org/downloads](https://www.python.org/downloads/) (the "Python 3.x macOS 64-bit installer") or, if the user already uses Homebrew, `brew install python`. Avoid pyenv-built Python where possible — its bundled SQLite often has extension loading disabled, which the query engine handles gracefully but the user may want to know.
-- **Linux** — distro package manager: `sudo apt install python3 python3-venv` (Debian/Ubuntu), `sudo dnf install python3 python3-venv` (Fedora/RHEL), `sudo pacman -S python` (Arch). Tell the user the exact command for their distro.
-- **Windows** — install from [python.org/downloads](https://www.python.org/downloads/) (check "Add python.exe to PATH" during install) or via Microsoft Store.
-
-**Do not block setup** if `python3` is missing. Note the limitation, continue, and Step 8.5 will gracefully fall back to a lexical-only vault until the user installs Python and re-runs the provisioning step.
-
-### Detect `rg` (ripgrep)
+### Detect what's already there and surface env diagnostics
 
 ```bash
-rg --version 2>/dev/null
+python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --check
 ```
 
-If absent, surface guidance — the lexical path still works (the script falls back to `grep` on POSIX or a pure-Python walker on Windows when neither is found):
+The script prints OS / Python version / `rg` detection (or platform-specific
+install hint) / runtime-root status. **Surface its output to the user
+verbatim** — it's the canonical view of what they have and what's missing.
 
-- **macOS** — `brew install ripgrep`, or download a release binary from [github.com/BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep)
-- **Linux** — `sudo apt install ripgrep` / `sudo dnf install ripgrep` / `sudo pacman -S ripgrep`
-- **Windows** — `winget install BurntSushi.ripgrep.MSVC`, `scoop install ripgrep`, or release binary
+If `rg` is missing, surface the hint and ask whether to install it now or
+continue (the engine falls back to `grep` / pure-Python search). Don't block
+setup on `rg`. Don't block on Python being absent — but if Python is missing,
+Step 5.5 cannot install the runtime, so flag clearly.
 
-**Do not block.** Setup continues either way.
+### Install the runtime
 
-### After surfacing guidance
+```bash
+python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --install
+```
 
-Ask:
+If the runtime is already installed (additional McBrain on this machine), the
+script prints a "skipping reinstall" line and exits 0. Otherwise it creates
+the venv at `<runtime>/venv/`, copies the engine source files in, and runs
+`pip install -r requirements.txt`. **First install pulls the FastEmbed model
+(~30 MB) into FastEmbed's shared cache** — call this out so users on metered
+connections aren't surprised.
 
-> "Install these now and let me know when ready, or proceed with what's available?"
+Surface the bootstrap output to the user.
 
-If the user installs and confirms, re-run detection and continue. If they proceed without, record the limitation in the vault's CLAUDE.md `## Query engine` section (Step 8.5 writes that section) so the user can fix it later.
+---
+
+## Step 5.6: Register the `mcbrain-engine` MCP — both Code and Desktop
+
+The runtime is useless until both Claude Code and Claude Desktop know to
+launch it. The bootstrap script handles both, idempotently:
+
+```bash
+python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --register
+```
+
+What it writes:
+
+- **Claude Desktop / Cowork config** — the `mcpServers.mcbrain-engine` entry,
+  with `command` set to the venv interpreter (`venv/bin/python` on macOS/Linux,
+  `venv\Scripts\python.exe` on Windows) and `args` set to the engine script
+  path. macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`;
+  Windows: `%APPDATA%\Claude\claude_desktop_config.json`.
+- **Claude Code user-scope MCP config** — preferred path is `claude mcp add
+  --scope user mcbrain-engine <python> <script>` (the CLI handles whichever
+  file is right per OS). If `claude` isn't on PATH, the bootstrap falls back
+  to writing `~/.claude/settings.json` directly.
+
+Both writes are no-ops if the entry already matches. The most likely setup
+regression is *"second McBrain setup silently doesn't register the MCP in the
+second harness"* — if the user later opens Cowork and the engine MCP isn't
+available, they should re-run **just this step** (`setup_bootstrap.py
+--register`) from any McBrain plugin install on this machine.
+
+Tell the user that **a Claude Desktop restart is required** for the new MCP
+entry to take effect there. Claude Code picks it up on the next session.
 
 ---
 
@@ -426,40 +459,53 @@ cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion 
 
 ---
 
-## Step 8.5: Provision the query engine
+## Step 8.5: Provision this vault's index via the MCP
 
-Hand off to the `mcbrain-ops` skill to create `<vault>/.mcbrain/`, install the per-vault Python venv, copy in the indexer script, patch the vault's `CLAUDE.md` so future operations route through the engine, and build the initial (empty) index. Everything that needs to happen end-to-end is encapsulated in the `migrate` subcommand — this step should not reimplement any of it.
+After the runtime is installed (Step 5.5) and registered (Step 5.6), provision
+*this specific vault* by calling the `mcbrain-engine` MCP's `migrate` tool.
+There's no Python shellout here — the engine MCP does all the work.
 
-If Step 5.5 reported `python3` is missing, **skip Step 8.5** and tell the user: *"Skipping query-engine provisioning — Python 3 not found. Install Python (see Step 5.5 instructions) and re-run `mcbrain-ops migrate --vault <vault>` to provision the engine. Until then, the wiki is searchable lexically only."* The vault remains fully usable in lexical-only mode.
+Call the tool with:
 
-Otherwise, run from the agent's environment (system shell, not the vault MCP):
+- `vault_path` = `VAULT_PATH` (the absolute path the user confirmed in Step 1)
+- `vault_name` = `MCP_NAME` (the registry-canonical name, e.g.
+  `mcbrain-ai-science`)
+
+What `migrate` does end-to-end (idempotent — safe to re-run):
+
+1. Ensures `VAULT_PATH/.mcbrain/` exists.
+2. If a legacy PR #4 `.mcbrain/{bin,venv}/` is present (carry-over from an
+   older McBrain install), reads `index.db`'s meta. If the embedding model+dim
+   match the current engine, the index is preserved and the `bin/`/`venv/`
+   directories are removed. If they don't, the index is wiped for rebuild.
+3. Writes/updates the vault's entry in the platform-resolved registry (the
+   file `vaults.json` under the user-config dir — see the `mcp-server/README.md`
+   for the exact path on each OS).
+4. Patches `VAULT_PATH/CLAUDE.md` to the MCP-flavored Query operation and the
+   `## Query engine` section (mode marker `lexical+semantic (mcp)`). Idempotent.
+5. Runs an initial `index_sync`. On a freshly created vault `wiki/` is empty,
+   so this just timestamps the meta table.
+
+Surface the JSON output to the user. The `legacy_layout_removed`,
+`rebuilt_for_mismatch`, and `claude_md_patched` flags matter for trust — they
+make it visible what migrate actually did.
+
+If Step 5.5 reported the runtime install failed (Python missing or pip error),
+**skip Step 8.5** and tell the user: *"Skipping vault provisioning — the
+mcbrain-engine runtime isn't installed yet. Fix the env issue surfaced in
+Step 5.5 and re-run `setup_bootstrap.py --install` followed by this step.
+Until then, the wiki is searchable lexically only via the engine's fallback
+mode."*
+
+**Commit (Git strategy only).** If the backup strategy is git, present a
+copy-paste block (do not run git directly):
 
 ```bash
-python3 <plugin_root>/plugins/mcbrain/skills/mcbrain-ops/references/mcbrain_ops.py migrate --vault VAULT_PATH
+cd VAULT_PATH && git add CLAUDE.md && git commit -m "init: provision query engine" && git push
 ```
 
-What `migrate` does (do not duplicate this logic here — it lives in `mcbrain-ops`):
-
-1. Creates `VAULT_PATH/.mcbrain/{venv,bin}/`.
-2. Runs `python3 -m venv .mcbrain/venv`.
-3. Installs the pinned requirements (`fastembed`, `numpy`) into the venv via `pip`. **Never installed system-wide** — locked decision #11.
-4. Copies `mcbrain_ops.py` and `schema.sql` from this repo's `mcbrain-ops/references/` into `VAULT_PATH/.mcbrain/bin/`. The bin directory is tracked in git so the script travels with the vault.
-5. Patches `VAULT_PATH/CLAUDE.md` to add the `## Query engine` section, rewrite the `## Operations → Query` procedure to call this skill, and append `index sync` to the ingest procedure. The patch is **idempotent** — re-running it on an already-migrated vault is a no-op.
-6. Runs an initial `index rebuild` to seed the database. On a freshly created vault `wiki/` is empty, so this is a quick no-op that just timestamps the meta table.
-
-Surface the migrate output to the user — first-run downloads the FastEmbed embedding model (~30 MB) into the shared cache at `~/.cache/fastembed/`, and that download surprises users on metered connections if they don't see it announced.
-
-**Cross-platform notes** (the script handles these — listed here so the agent knows what's happening):
-
-- POSIX path to the venv interpreter: `<vault>/.mcbrain/venv/bin/python`.
-- Windows: `<vault>/.mcbrain/venv/Scripts/python.exe`. The script picks the right one based on `platform.system()`.
-- The model cache lives in FastEmbed's default location (`~/.cache/fastembed/` on POSIX, `%LOCALAPPDATA%\fastembed\` on Windows) and is **shared across all McBrain vaults** so additional vaults are essentially free to set up.
-
-**Commit (Git strategy only).** If the backup strategy is git, present a copy-paste block (do not run git directly):
-
-```bash
-cd VAULT_PATH && git add .mcbrain/bin CLAUDE.md && git commit -m "init: provision query engine" && git push
-```
+(Note: `.mcbrain/index.db` is gitignored per Step 3 — only the patched
+CLAUDE.md needs committing.)
 
 ---
 
@@ -494,11 +540,12 @@ Claude will read the source, discuss key points, write wiki pages in `wiki/`, up
 **Lint**: `"Lint McBrain. Find contradictions, orphan pages, stale claims, missing cross-references."`
 **Save a query answer**: `"File your answer as a new wiki page at wiki/[topic].md"`
 
-**Query-engine maintenance** (rare — the index normally stays current automatically because every wiki write runs `index sync`):
+**Query-engine maintenance** (rare — the index normally stays current automatically because every wiki write runs `index_sync`):
 
-- *Full reindex* if the embedding model or schema changes, or if results stop making sense: `mcbrain-ops index rebuild` (or directly, `python3 <vault>/.mcbrain/bin/mcbrain_ops.py index rebuild --vault <vault>`).
-- *Index health check*: `mcbrain-ops index status` — prints doc count, last sync time, and the active embedding model.
-- *Remove the engine entirely*: `mcbrain-ops uninstall --force` — deletes `<vault>/.mcbrain/`. Wiki and raw content are untouched.
+- *Full reindex* if the embedding model or schema changes, or if results stop making sense: call the `mcbrain-engine` MCP's `index_rebuild` tool (the `mcbrain-ops` skill knows the right invocation).
+- *Index health check*: call the `mcbrain-engine` MCP's `index_status` tool — returns doc count, last sync time, and the active embedding model.
+- *Remove a vault's index*: call the `mcbrain-engine` MCP's `uninstall` tool with `force=true` — deletes `<vault>/.mcbrain/` and the registry entry. Wiki and raw content are untouched. The shared engine runtime is left alone.
+- *Remove the engine runtime entirely*: see the "Nuke and reinstall" section of `plugins/mcbrain/mcp-server/README.md`.
 
 ---
 
