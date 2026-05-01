@@ -17,6 +17,8 @@ This is the **operating skill** — it runs day-to-day against an already-config
 - **Lint** — find contradictions, orphan pages, stale claims, and missing cross-references
 - **Synthesis** — file a new wiki page that merges insights across existing pages
 
+The query engine itself (hybrid lexical + semantic search) is the [`mcbrain-ops`](../mcbrain-ops) skill, provisioned automatically by [`mcbrain-setup`](../mcbrain-setup) and called automatically by this skill after wiki edits and at query time. If the vault was set up before the engine landed, this skill detects that and offers to migrate.
+
 On every operation it updates `wiki/index.md` and appends to `wiki/log.md`, and — when the vault is backed by git — offers to commit and push.
 
 ## How it works

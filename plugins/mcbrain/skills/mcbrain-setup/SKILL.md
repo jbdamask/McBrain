@@ -230,7 +230,7 @@ After all files are written:
 ```bash
 cd VAULT_PATH
 git init -b main
-printf '.DS_Store\n.obsidian/workspace*\n.obsidian/cache\n' > .gitignore
+printf '.DS_Store\n.obsidian/workspace*\n.obsidian/cache\n.mcbrain/venv/\n.mcbrain/index.db\n.mcbrain/index.db-*\n__pycache__/\n' > .gitignore
 git remote add origin REPO_URL
 git add -A
 git commit -m "init: MCP_NAME vault scaffolding"
@@ -238,6 +238,8 @@ git push -u origin main
 ```
 
 Confirm the push succeeded. If it fails, check that `gh auth login` completed correctly and that `REPO_URL` is reachable.
+
+The gitignore covers everything in `<vault>/.mcbrain/` that Step 8.5 will create *except* `.mcbrain/bin/`. The `bin/` directory holds the indexer script and SQL schema, which **are tracked** so the per-vault setup is reproducible from a fresh clone (a new machine pulls the repo, re-runs `mcbrain-ops migrate`, and gets back to a working query engine without redownloading the script). The venv and index database are not tracked because they're either platform-specific or rebuildable from the wiki content. See `mcbrain-ops/references/gitignore-snippet.md` for the per-line rationale.
 
 ---
 
@@ -284,6 +286,50 @@ Merge the following block under `"mcpServers"` (use the actual `MCP_NAME` value)
 If the file doesn't exist yet, create it with the full structure. If other MCP servers already exist, merge carefully — don't overwrite them.
 
 Show the user the final config before writing it and ask them to confirm.
+
+---
+
+## Step 5.5: Detect query-engine prerequisites (do not install)
+
+McBrain ships a hybrid lexical + semantic query engine (the `mcbrain-ops` skill) that gets provisioned in Step 8.5. It needs `python3` (>=3.10) for the per-vault venv and benefits from `ripgrep` (`rg`) for the lexical fast path. **McBrain never invokes a system package manager.** This step only *detects* what's available and *surfaces* platform-appropriate install instructions; the user installs the missing pieces themselves.
+
+**Detection has to work on every host**: macOS, Linux, Windows. Don't assume zsh/bash — the user could be in PowerShell, Git Bash, WSL, or cmd. Use `python3 --version` (then `python --version` as a fallback and parse for `Python 3.x`), and `rg --version`.
+
+### Detect `python3`
+
+```bash
+python3 --version 2>/dev/null || python --version 2>/dev/null
+```
+
+If neither prints `Python 3.x` (>=3.10), surface platform-appropriate guidance and continue:
+
+- **macOS** — install from [python.org/downloads](https://www.python.org/downloads/) (the "Python 3.x macOS 64-bit installer") or, if the user already uses Homebrew, `brew install python`. Avoid pyenv-built Python where possible — its bundled SQLite often has extension loading disabled, which the query engine handles gracefully but the user may want to know.
+- **Linux** — distro package manager: `sudo apt install python3 python3-venv` (Debian/Ubuntu), `sudo dnf install python3 python3-venv` (Fedora/RHEL), `sudo pacman -S python` (Arch). Tell the user the exact command for their distro.
+- **Windows** — install from [python.org/downloads](https://www.python.org/downloads/) (check "Add python.exe to PATH" during install) or via Microsoft Store.
+
+**Do not block setup** if `python3` is missing. Note the limitation, continue, and Step 8.5 will gracefully fall back to a lexical-only vault until the user installs Python and re-runs the provisioning step.
+
+### Detect `rg` (ripgrep)
+
+```bash
+rg --version 2>/dev/null
+```
+
+If absent, surface guidance — the lexical path still works (the script falls back to `grep` on POSIX or a pure-Python walker on Windows when neither is found):
+
+- **macOS** — `brew install ripgrep`, or download a release binary from [github.com/BurntSushi/ripgrep](https://github.com/BurntSushi/ripgrep)
+- **Linux** — `sudo apt install ripgrep` / `sudo dnf install ripgrep` / `sudo pacman -S ripgrep`
+- **Windows** — `winget install BurntSushi.ripgrep.MSVC`, `scoop install ripgrep`, or release binary
+
+**Do not block.** Setup continues either way.
+
+### After surfacing guidance
+
+Ask:
+
+> "Install these now and let me know when ready, or proceed with what's available?"
+
+If the user installs and confirms, re-run detection and continue. If they proceed without, record the limitation in the vault's CLAUDE.md `## Query engine` section (Step 8.5 writes that section) so the user can fix it later.
 
 ---
 
@@ -380,6 +426,43 @@ cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion 
 
 ---
 
+## Step 8.5: Provision the query engine
+
+Hand off to the `mcbrain-ops` skill to create `<vault>/.mcbrain/`, install the per-vault Python venv, copy in the indexer script, patch the vault's `CLAUDE.md` so future operations route through the engine, and build the initial (empty) index. Everything that needs to happen end-to-end is encapsulated in the `migrate` subcommand — this step should not reimplement any of it.
+
+If Step 5.5 reported `python3` is missing, **skip Step 8.5** and tell the user: *"Skipping query-engine provisioning — Python 3 not found. Install Python (see Step 5.5 instructions) and re-run `mcbrain-ops migrate --vault <vault>` to provision the engine. Until then, the wiki is searchable lexically only."* The vault remains fully usable in lexical-only mode.
+
+Otherwise, run from the agent's environment (system shell, not the vault MCP):
+
+```bash
+python3 <plugin_root>/plugins/mcbrain/skills/mcbrain-ops/references/mcbrain_ops.py migrate --vault VAULT_PATH
+```
+
+What `migrate` does (do not duplicate this logic here — it lives in `mcbrain-ops`):
+
+1. Creates `VAULT_PATH/.mcbrain/{venv,bin}/`.
+2. Runs `python3 -m venv .mcbrain/venv`.
+3. Installs the pinned requirements (`fastembed`, `numpy`) into the venv via `pip`. **Never installed system-wide** — locked decision #11.
+4. Copies `mcbrain_ops.py` and `schema.sql` from this repo's `mcbrain-ops/references/` into `VAULT_PATH/.mcbrain/bin/`. The bin directory is tracked in git so the script travels with the vault.
+5. Patches `VAULT_PATH/CLAUDE.md` to add the `## Query engine` section, rewrite the `## Operations → Query` procedure to call this skill, and append `index sync` to the ingest procedure. The patch is **idempotent** — re-running it on an already-migrated vault is a no-op.
+6. Runs an initial `index rebuild` to seed the database. On a freshly created vault `wiki/` is empty, so this is a quick no-op that just timestamps the meta table.
+
+Surface the migrate output to the user — first-run downloads the FastEmbed embedding model (~30 MB) into the shared cache at `~/.cache/fastembed/`, and that download surprises users on metered connections if they don't see it announced.
+
+**Cross-platform notes** (the script handles these — listed here so the agent knows what's happening):
+
+- POSIX path to the venv interpreter: `<vault>/.mcbrain/venv/bin/python`.
+- Windows: `<vault>/.mcbrain/venv/Scripts/python.exe`. The script picks the right one based on `platform.system()`.
+- The model cache lives in FastEmbed's default location (`~/.cache/fastembed/` on POSIX, `%LOCALAPPDATA%\fastembed\` on Windows) and is **shared across all McBrain vaults** so additional vaults are essentially free to set up.
+
+**Commit (Git strategy only).** If the backup strategy is git, present a copy-paste block (do not run git directly):
+
+```bash
+cd VAULT_PATH && git add .mcbrain/bin CLAUDE.md && git commit -m "init: provision query engine" && git push
+```
+
+---
+
 ## Step 9: Install the companion operating skill
 
 Point the user at the `mcbrain` skill for day-to-day ingest/query/lint operations. It uses the `MCP_NAME` convention to route requests to the right vault — so "find insights from McBrain AI Science" maps to the `mcbrain-ai-science` MCP automatically.
@@ -410,6 +493,12 @@ Claude will read the source, discuss key points, write wiki pages in `wiki/`, up
 **Query**: `"Ask McBrain: [question]. Cite the pages you used."`
 **Lint**: `"Lint McBrain. Find contradictions, orphan pages, stale claims, missing cross-references."`
 **Save a query answer**: `"File your answer as a new wiki page at wiki/[topic].md"`
+
+**Query-engine maintenance** (rare — the index normally stays current automatically because every wiki write runs `index sync`):
+
+- *Full reindex* if the embedding model or schema changes, or if results stop making sense: `mcbrain-ops index rebuild` (or directly, `python3 <vault>/.mcbrain/bin/mcbrain_ops.py index rebuild --vault <vault>`).
+- *Index health check*: `mcbrain-ops index status` — prints doc count, last sync time, and the active embedding model.
+- *Remove the engine entirely*: `mcbrain-ops uninstall --force` — deletes `<vault>/.mcbrain/`. Wiki and raw content are untouched.
 
 ---
 

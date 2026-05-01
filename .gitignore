@@ -1,2 +1,9 @@
 .DS_Store
 .env
+
+# Local test venv created by tests/README.md instructions
+.test-venv/
+
+# Python bytecode and pytest cache
+__pycache__/
+.pytest_cache/
