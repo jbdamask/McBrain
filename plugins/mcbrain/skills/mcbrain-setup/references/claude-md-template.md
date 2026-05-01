@@ -111,6 +111,7 @@ Use when the user says "ingest" with no Notion context, or names a file already 
 5. Create or update entity and concept pages touched by this source.
 6. Update `wiki/index.md` with the new page(s).
 7. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source title]`.
+8. Invoke the `mcbrain-ops` skill (`index sync`) so the new wiki page(s) are searchable immediately. Cheap (sub-second on no-op).
 
 A single source may touch 5-15 wiki pages. That's normal.
 
@@ -140,13 +141,16 @@ Use when the user has just finished a `notion-research-runner` pass, or referenc
 4. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/<slug>.md` files. Cite them in wiki pages exactly the same way you'd cite any other raw source.
 5. **Close the loop in Notion.** After the wiki write succeeds, flip the Notion task's Status to `Done`. If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
 6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
+7. Invoke the `mcbrain-ops` skill (`index sync`) so the new wiki page(s) are searchable immediately.
 
 ### Query
 When asked a question against the wiki:
-1. Read `wiki/index.md` to find relevant pages
-2. Read those pages
-3. Synthesize an answer with citations (e.g., `[[wiki/topic]]`)
-4. Offer to file the answer as a new wiki page if it's worth keeping
+1. Invoke the `mcbrain-ops` skill (`query "<text>"`). It returns a ranked list of wiki page paths + scores as JSON, fused from lexical (ripgrep) and semantic (FastEmbed) search via Reciprocal Rank Fusion.
+2. Read the top 5–8 pages from that list.
+3. Synthesize an answer with `[[wikilinks]]` citations.
+4. Offer to file the answer as a new wiki page if it's worth keeping.
+
+`wiki/index.md` is no longer the retrieval mechanism — it stays for human browsing and lint only.
 
 Answers don't have to be prose. Pick the format that fits the question:
 - **Markdown page** — the default; file-able back into the wiki as a new synthesis page
@@ -215,6 +219,17 @@ Each log entry:
 One-line description of what was done.
 Files touched: wiki/page1.md, wiki/page2.md
 ```
+
+## Query engine
+
+- mode: lexical+semantic
+- embedding_model: BAAI/bge-small-en-v1.5
+- embedding_dim: 384
+- index_path: .mcbrain/index.db
+
+The query engine is hybrid: lexical (ripgrep / grep / pure-Python fallback) plus semantic (FastEmbed for embeddings, brute-force cosine via numpy over a SQLite-stored embedding column). Results from the two modalities are fused via Reciprocal Rank Fusion. The per-vault index lives at `.mcbrain/index.db` and is provisioned and maintained by the `mcbrain-ops` skill. Re-index with `mcbrain-ops index rebuild` if the schema or model ever changes.
+
+If this section is missing on an older vault, the `mcbrain` skill detects it on next invocation and offers to migrate the vault by running `mcbrain-ops migrate`.
 
 ## Notion companion databases
 

@@ -43,15 +43,30 @@ Each time you have a conversation with Claude about the contents of your McBrain
 ![Ingest](./img/ingest.png)
 ![Notion](./img/notion-research-db.png)
 
+## Query engine
+
+Each McBrain vault ships with a built-in hybrid lexical + semantic query engine, provisioned automatically by `mcbrain-setup` (Step 8.5) and maintained by the `mcbrain-ops` skill. There's nothing to configure — `mcbrain-setup` creates a per-vault Python venv at `<vault>/.mcbrain/venv/`, installs the indexer dependencies, builds the initial search index, and patches your vault's `CLAUDE.md` to route queries through it.
+
+- **Lexical** uses ripgrep (`rg`) when available, with a `grep` / pure-Python fallback so the lexical path always works.
+- **Semantic** uses [FastEmbed](https://github.com/qdrant/fastembed)'s CPU-only ONNX embedding model (`BAAI/bge-small-en-v1.5`, 384 dims, ~30 MB). Queries like "cardiac event" still surface a page about *myocardial infarction* even though those words don't overlap.
+- **Hybrid ranking** uses Reciprocal Rank Fusion (RRF) over the two modalities.
+
+The embedding model lives in FastEmbed's shared cache (`~/.cache/fastembed/` on macOS/Linux, `%LOCALAPPDATA%\fastembed\` on Windows) so adding a second McBrain vault doesn't re-download it. Per-vault state — venv, index — lives at `<vault>/.mcbrain/` and is rebuildable from the wiki content. **No system-wide installs**: McBrain only detects whether `python3` and `rg` are available and surfaces install instructions if they aren't; everything else stays inside `<vault>/.mcbrain/`.
+
+Existing vaults that pre-date the engine get an automatic migration prompt the next time the `mcbrain` skill is invoked against them.
+
 ## Skills bundled in the plugin
 
-The `mcbrain` plugin contains four skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
+The `mcbrain` plugin contains five skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
 
 ### [`mcbrain-setup`](./plugins/mcbrain/skills/mcbrain-setup)
-One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, walks through Obsidian and browser-extension setup, and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
+One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, **provisions the per-vault query engine**, walks through Obsidian and browser-extension setup, and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
 
 ### [`mcbrain`](./plugins/mcbrain/skills/mcbrain)
 Day-to-day operating skill for McBrain. Handles ingesting sources into the vault, querying the wiki, filing synthesis pages, and linting. Supports multiple vaults (e.g. `mcbrain-finance`, `mcbrain-ai-science`) by mapping the user's request to the matching MCP filesystem server. Triggered by phrases like "ingest this", "save to mcbrain", "ask my brain", or any reference to the user's wiki / second brain.
+
+### [`mcbrain-ops`](./plugins/mcbrain/skills/mcbrain-ops)
+The query engine itself: a hybrid lexical + semantic search index over each vault's `wiki/`. Provisioned automatically by `mcbrain-setup` and called automatically by `mcbrain` after every wiki edit (to keep the index current) and at query time. You normally never invoke this directly — but it's the right skill if you ever need to rebuild the index, check its status, migrate an older vault, or remove the engine.
 
 ### [`notion-research-db`](./plugins/mcbrain/skills/notion-research-db)
 Creates a Notion database scoped to a research topic, with a fixed schema for tracking tasks (Task name, Status, Priority, Created date, Last updated date, Notes). After creation, registers the database name and URL back into the associated McBrain vault so the wiki knows where its companion tracker lives. Works with any Notion MCP connector — matches tools by capability rather than exact name.
@@ -78,6 +93,7 @@ McBrain/
 │       └── skills/
 │           ├── mcbrain-setup/
 │           ├── mcbrain/
+│           ├── mcbrain-ops/
 │           ├── notion-research-db/
 │           └── notion-research-runner/
 ├── README.md
