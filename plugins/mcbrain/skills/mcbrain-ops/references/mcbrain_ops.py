@@ -588,34 +588,46 @@ def cmd_query(vault: Path, text: str, k: int) -> int:
 
     db_path = index_db_path(vault)
     semantic_ranks: list[str] = []
-    chunks_by_path: dict[str, str] = {}
+    excerpts: dict[str, str] = {}
 
-    if db_path.exists():
-        conn = open_db(vault)
-        try:
+    conn: sqlite3.Connection | None = None
+    try:
+        if db_path.exists():
+            conn = open_db(vault)
             check_model_compatibility(conn, vault)
             sem = semantic_search(conn, text)
             semantic_ranks = [path for path, _ in sem]
-            for row in conn.execute("SELECT path, text FROM chunks").fetchall():
-                chunks_by_path[row["path"]] = row["text"]
-        finally:
+        else:
+            warn(
+                "no index — running lexical-only. "
+                f"Run `mcbrain-ops migrate --vault {vault}` to enable semantic search."
+            )
+
+        lex = lexical_search(vault, text)
+        lexical_ranks = [path for path, _ in lex]
+
+        rank_inputs = [r for r in (lexical_ranks, semantic_ranks) if r]
+        fused = rrf_fuse(rank_inputs)
+        ordered = sorted(fused.items(), key=lambda x: (-x[1], x[0]))[:k]
+        top_paths = [path for path, _ in ordered]
+
+        # Lazy text fetch: only SELECT text for the K paths that survived RRF,
+        # not every chunk in the index. Keeps per-query memory bounded by k×
+        # average page size instead of N× average page size.
+        if conn is not None and top_paths:
+            placeholders = ",".join("?" * len(top_paths))
+            for row in conn.execute(
+                f"SELECT path, text FROM chunks WHERE path IN ({placeholders})",
+                top_paths,
+            ).fetchall():
+                excerpts[row["path"]] = row["text"]
+    finally:
+        if conn is not None:
             conn.close()
-    else:
-        warn(
-            "no index — running lexical-only. "
-            f"Run `mcbrain-ops migrate --vault {vault}` to enable semantic search."
-        )
-
-    lex = lexical_search(vault, text)
-    lexical_ranks = [path for path, _ in lex]
-
-    rank_inputs = [r for r in (lexical_ranks, semantic_ranks) if r]
-    fused = rrf_fuse(rank_inputs)
-    ordered = sorted(fused.items(), key=lambda x: (-x[1], x[0]))[:k]
 
     results = []
     for path, score in ordered:
-        text_for_excerpt = chunks_by_path.get(path)
+        text_for_excerpt = excerpts.get(path)
         if text_for_excerpt is None:
             full = vault / path
             if full.is_file():
