@@ -194,3 +194,50 @@ def test_replace_query_section_no_op_when_already_migrated():
 def test_replace_query_section_no_op_when_no_query_block():
     text = "## Operations\n\n### Lint\nfoo\n"
     assert ops._replace_query_section(text) == text
+
+
+# ------------------------- general sync rule (catch-all) --------------------
+
+
+def test_general_sync_rule_inserted_under_operations(fresh_vault: Path):
+    """patch_claude_md must add the 'always sync after any wiki write' rule
+    immediately under ## Operations (regression for bead McBrain-bf3:
+    without this catch-all rule, Claude only syncs after the formally
+    enumerated ingest procedures, leaving lint and ad-hoc edits to drift)."""
+    ops.patch_claude_md(fresh_vault)
+    after = (fresh_vault / "CLAUDE.md").read_text(encoding="utf-8")
+    assert ops.GENERAL_SYNC_RULE_MARKER in after
+    operations_idx = after.find("## Operations")
+    rule_idx = after.find(ops.GENERAL_SYNC_RULE_MARKER)
+    next_subhead = after.find("\n### ", operations_idx)
+    assert (
+        operations_idx < rule_idx < next_subhead
+    ), "rule must sit between '## Operations' and the first sub-heading"
+
+
+def test_general_sync_rule_idempotent(fresh_vault: Path):
+    """Re-running the patcher must not duplicate the catch-all rule."""
+    ops.patch_claude_md(fresh_vault)
+    ops.patch_claude_md(fresh_vault)
+    after = (fresh_vault / "CLAUDE.md").read_text(encoding="utf-8")
+    assert after.count(ops.GENERAL_SYNC_RULE_MARKER) == 1
+
+
+def test_general_sync_rule_present_in_template(script_dir: Path):
+    """Regression: the template ships with the same rule the patcher would
+    add. Otherwise fresh-installed vaults and migrated vaults end up
+    structurally different in a meaningful way."""
+    template_path = (
+        script_dir.parent.parent
+        / "mcbrain-setup"
+        / "references"
+        / "claude-md-template.md"
+    )
+    assert template_path.is_file(), template_path
+    assert ops.GENERAL_SYNC_RULE_MARKER in template_path.read_text(encoding="utf-8")
+
+
+def test_general_sync_rule_no_op_without_operations_header():
+    """If a CLAUDE.md has no '## Operations' section, leave it alone."""
+    text = "# Just a title\n\nSome unrelated content.\n"
+    assert ops._ensure_general_sync_rule(text) == text

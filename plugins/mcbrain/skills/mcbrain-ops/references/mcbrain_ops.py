@@ -838,6 +838,21 @@ INDEX_SYNC_STEP_TEXT = (
 )
 
 
+GENERAL_SYNC_RULE = (
+    "**Always sync the search index after any wiki write.** Whenever you "
+    "create, modify, or delete a file under `wiki/` — whether through a "
+    "formal ingest, a lint pass that updates `log.md`, an ad-hoc page "
+    "update, or a synthesis filing — invoke the `mcbrain-ops` skill "
+    "(`index sync`) afterward so subsequent queries see the change. Cheap "
+    "(sub-second on no-op). The specific operation procedures below all "
+    "end with this step explicitly; this paragraph is the catch-all for "
+    "anything not enumerated."
+)
+
+
+GENERAL_SYNC_RULE_MARKER = "Always sync the search index after any wiki write"
+
+
 def patch_claude_md(vault: Path) -> bool:
     """Idempotently update CLAUDE.md to advertise the query engine.
 
@@ -856,6 +871,7 @@ def patch_claude_md(vault: Path) -> bool:
 
     text = _replace_query_section(text)
     text = _ensure_index_sync_tail(text)
+    text = _ensure_general_sync_rule(text)
 
     if text == original:
         return False
@@ -882,6 +898,39 @@ def _replace_query_section(text: str) -> str:
         + NEW_QUERY_OPERATION.rstrip()
         + "\n\n"
         + text[end:].lstrip("\n")
+    )
+
+
+def _ensure_general_sync_rule(text: str) -> str:
+    """Insert the catch-all 'always sync after any wiki write' rule
+    immediately under `## Operations`, if not already there.
+
+    Idempotent: detects existing presence by `GENERAL_SYNC_RULE_MARKER`.
+    Without this rule, Claude only runs index sync after the formally
+    enumerated procedures (Ingest from raw/, Ingest from Notion); ad-hoc
+    edits and lint pass log writes would silently drift the index.
+    """
+    if GENERAL_SYNC_RULE_MARKER in text:
+        return text
+    header = "## Operations"
+    start = text.find(header)
+    if start < 0:
+        return text
+    # Insert immediately after the header line and the blank line that follows.
+    line_end = text.find("\n", start)
+    if line_end < 0:
+        return text
+    insertion_point = line_end + 1
+    # Skip a single trailing blank line if present so the inserted paragraph
+    # sits directly under the header with one blank-line gap on each side.
+    if text[insertion_point : insertion_point + 1] == "\n":
+        insertion_point += 1
+    return (
+        text[:insertion_point]
+        + "\n"
+        + GENERAL_SYNC_RULE
+        + "\n\n"
+        + text[insertion_point:].lstrip("\n")
     )
 
 

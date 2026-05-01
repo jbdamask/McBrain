@@ -96,6 +96,8 @@ Link to related concepts using [[wikilinks]] throughout the text.
 
 ## Operations
 
+**Always sync the search index after any wiki write.** Whenever you create, modify, or delete a file under `wiki/` — whether through a formal ingest, a lint pass that updates `log.md`, an ad-hoc page update, or a synthesis filing — invoke the `mcbrain-ops` skill (`index sync`) afterward so subsequent queries see the change. Cheap (sub-second on no-op). The specific operation procedures below all end with this step explicitly; this paragraph is the catch-all for anything not enumerated.
+
 ### Ingest
 
 "Ingest" has two modes. The `mcbrain` skill picks one based on conversation context (see its routing section). Both modes ultimately funnel through the same wiki-update steps below — the difference is where the source comes from.
