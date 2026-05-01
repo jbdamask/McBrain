@@ -289,80 +289,134 @@ Show the user the final config before writing it and ask them to confirm.
 
 ---
 
-## Step 5.5: Provision the McBrain query engine runtime, once-per-machine
+## Step 5.5: Confirm Python prerequisite
 
-McBrain v2 ships a single global stdio MCP server, `mcbrain-engine`, that
-serves every McBrain vault on this machine. It lives at the platform-resolved
-runtime root (`~/Library/Application Support/mcbrain-engine` on macOS,
-`%LOCALAPPDATA%\mcbrain-engine` on Windows, `~/.local/share/mcbrain-engine`
-on Linux). Install once; reuse for every additional McBrain.
+McBrain's query engine runs as a local MCP server (`mcbrain-engine`) launched
+natively by Claude Desktop. **Required prerequisite: Python 3.10+ on the
+user's Mac.** Modern macOS doesn't ship Python by default, so confirm before
+proceeding.
 
-All OS branching, env detection, and file copying is handled by
-`setup_bootstrap.py` (under `plugins/mcbrain/mcp-server/`). This step just
-runs that script through the Bash tool — same invocation whether the
-underlying shell is zsh, Git Bash, WSL, or `cmd.exe`.
+This SKILL runs inside Cowork's sandbox, which can't directly check the Mac's
+Python. Ask the user:
 
-### Detect what's already there and surface env diagnostics
+> "The query engine needs Python 3.10 or newer on your Mac. Most macOS users
+> don't have it pre-installed. Two ways to get it:
+>
+> 1. Open Terminal and run `xcode-select --install` (gets Python plus dev
+>    tools — most reliable on Mac).
+> 2. Download from [python.org/downloads](https://www.python.org/downloads/) —
+>    pick the latest 3.x macOS installer.
+>
+> After installing, run `python3 --version` in Terminal to confirm it shows
+> 3.10 or higher. **Do you have Python 3.10+ installed already, or do you
+> need a moment to install it?**"
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --check
-```
+If the user installs and confirms, continue. If they say they have it already,
+trust them — first MCP launch (Step 8.5) will fail with a clear error if
+they're wrong, and they can install and retry.
 
-The script prints OS / Python version / `rg` detection (or platform-specific
-install hint) / runtime-root status. **Surface its output to the user
-verbatim** — it's the canonical view of what they have and what's missing.
-
-If `rg` is missing, surface the hint and ask whether to install it now or
-continue (the engine falls back to `grep` / pure-Python search). Don't block
-setup on `rg`. Don't block on Python being absent — but if Python is missing,
-Step 5.5 cannot install the runtime, so flag clearly.
-
-### Install the runtime
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --install
-```
-
-If the runtime is already installed (additional McBrain on this machine), the
-script prints a "skipping reinstall" line and exits 0. Otherwise it creates
-the venv at `<runtime>/venv/`, copies the engine source files in, and runs
-`pip install -r requirements.txt`. **First install pulls the FastEmbed model
-(~30 MB) into FastEmbed's shared cache** — call this out so users on metered
-connections aren't surprised.
-
-Surface the bootstrap output to the user.
+`ripgrep` is optional (the engine falls back to `grep` / pure-Python search).
+Don't block on it. If the user wants to install it: `brew install ripgrep`.
 
 ---
 
-## Step 5.6: Register the `mcbrain-engine` MCP — both Code and Desktop
+## Step 5.6: Install the engine runtime + register the MCP
 
-The runtime is useless until both Claude Code and Claude Desktop know to
-launch it. The bootstrap script handles both, idempotently:
+This is the only step where Cowork needs filesystem access beyond the vault
+itself. Walk the user through granting access, then write files.
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --register
+### What gets installed where
+
+- **Engine runtime files** copied to `~/Library/Application Support/mcbrain-engine/`:
+  `launcher.py`, `mcbrain_engine.py`, `paths.py`, `registry.py`, `schema.sql`,
+  `requirements.txt`. (No venv yet — the launcher creates that on first MCP
+  launch in Step 8.5.)
+- **MCP registration** added to `~/Library/Application Support/Claude/claude_desktop_config.json`
+  under `mcpServers.mcbrain-engine`, pointing at the launcher.
+
+### Grant access to `~/Library/Application Support/`
+
+Tell the user:
+
+> "I need filesystem access to `~/Library/Application Support/` to install the
+> engine runtime and register it with Claude. Click the **+** button next to
+> the chat input (or 'Add folder'), navigate to `Library/Application Support`
+> in your home folder, and select it. This is a one-time grant for setup —
+> you can remove the grant after."
+
+(Note: the `Library` folder is hidden by default on macOS; in Finder, press
+Cmd-Shift-. to show hidden folders, or use the keyboard shortcut Cmd-Shift-G
+and type `~/Library/Application Support`.)
+
+After the user grants access, verify by listing the new mount. Cowork will
+mount the granted folder under `/sessions/<session-id>/mnt/Application Support/`
+(or similar). Use the Bash tool to `ls` that mount and confirm the typical
+macOS subdirs (`Claude`, possibly others) are visible.
+
+### Copy the engine runtime files
+
+Read the runtime source files from the plugin install:
+
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/launcher.py`
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/mcbrain_engine.py`
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/paths.py`
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/registry.py`
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/schema.sql`
+- `${CLAUDE_PLUGIN_ROOT}/mcp-server/requirements.txt`
+
+Create the destination directory `<application-support-mount>/mcbrain-engine/`
+if it doesn't exist (use Bash `mkdir -p` against the mount path). Then write
+each source file to that destination using the Write tool. Verify all six
+files are present at the destination via `ls`.
+
+### Register the MCP entry
+
+Read `<application-support-mount>/Claude/claude_desktop_config.json`. If the
+file doesn't exist (fresh Claude Desktop install), create a minimal one:
+
+```json
+{
+  "mcpServers": {}
+}
 ```
 
-What it writes:
+Merge the following entry into `mcpServers` (preserve any existing servers):
 
-- **Claude Desktop / Cowork config** — the `mcpServers.mcbrain-engine` entry,
-  with `command` set to the venv interpreter (`venv/bin/python` on macOS/Linux,
-  `venv\Scripts\python.exe` on Windows) and `args` set to the engine script
-  path. macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`;
-  Windows: `%APPDATA%\Claude\claude_desktop_config.json`.
-- **Claude Code user-scope MCP config** — preferred path is `claude mcp add
-  --scope user mcbrain-engine <python> <script>` (the CLI handles whichever
-  file is right per OS). If `claude` isn't on PATH, the bootstrap falls back
-  to writing `~/.claude/settings.json` directly.
+```json
+"mcbrain-engine": {
+  "command": "python3",
+  "args": ["/Users/<USER>/Library/Application Support/mcbrain-engine/launcher.py"]
+}
+```
 
-Both writes are no-ops if the entry already matches. The most likely setup
-regression is *"second McBrain setup silently doesn't register the MCP in the
-second harness"* — if the user later opens Cowork and the engine MCP isn't
-available, they should re-run **just this step** (`setup_bootstrap.py
---register`) from any McBrain plugin install on this machine.
+Replace `<USER>` with the actual macOS username (read from `$HOME` in Bash, or
+ask). Use `json.dump` semantics — preserve existing entries; only add or
+update `mcbrain-engine`.
 
-Tell the user that **a Claude Desktop restart is required** for the new MCP
-entry to take effect there. Claude Code picks it up on the next session.
+If `mcpServers.mcbrain-engine` already exists with a matching `command` +
+`args`, this is a no-op (additional McBrain on this machine reusing the same
+runtime install).
+
+Show the user the final config block before writing, and confirm.
+
+### Idempotency notes
+
+- Re-running setup against a machine that already has the runtime: the file
+  copies overwrite (which is fine — they're identical or newer); the MCP
+  entry is detected as already-correct and left alone.
+- Plugin updates: re-run **just Step 5.6** to refresh the runtime files. The
+  launcher auto-detects mismatches and rebuilds the venv if needed.
+
+### Important: restart Claude Desktop
+
+Tell the user explicitly:
+
+> "I've installed the runtime files and registered the engine. **You need to
+> quit and reopen Claude Desktop now** for the new MCP entry to take effect.
+> The first time you ask McBrain a question after restarting, the engine
+> will spend ~30 seconds creating its Python virtual environment and
+> downloading the FastEmbed embedding model (~30 MB). After that, every
+> question is fast. We'll trigger that warmup deliberately in Step 8.5."
 
 ---
 
@@ -459,46 +513,80 @@ cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion 
 
 ---
 
-## Step 8.5: Provision this vault's index via the MCP
+## Step 8.5: Trigger first MCP launch + provision this vault's index
 
-After the runtime is installed (Step 5.5) and registered (Step 5.6), provision
-*this specific vault* by calling the `mcbrain-engine` MCP's `migrate` tool.
-There's no Python shellout here — the engine MCP does all the work.
+After Step 5.6 the user has restarted Claude Desktop. Now we want to:
+1. Trigger the launcher's one-time bootstrap (creates the venv + downloads
+   the FastEmbed model). This runs natively on the Mac via Claude Desktop.
+2. Call the `mcbrain-engine` MCP's `migrate` tool to register this vault and
+   patch its CLAUDE.md.
 
-Call the tool with:
+Both happen in one shot when we make the first `migrate` MCP call — the
+launcher bootstraps before the tool returns.
 
-- `vault_path` = `VAULT_PATH` (the absolute path the user confirmed in Step 1)
-- `vault_name` = `MCP_NAME` (the registry-canonical name, e.g.
-  `mcbrain-ai-science`)
+### Confirm the user has restarted
 
-What `migrate` does end-to-end (idempotent — safe to re-run):
+Ask:
+
+> "Did you quit and reopen Claude Desktop after Step 5.6? The new MCP entry
+> only takes effect after a full restart (quit from menu bar — closing the
+> window isn't enough)."
+
+If they say no, wait. Don't call the migrate tool until they confirm.
+
+### Call the migrate tool
+
+Once they confirm restart, in this **same** Cowork session, the
+`mcbrain-engine` MCP should now be loaded. Verify by listing available MCP
+tools — `query`, `index_sync`, `migrate`, etc. should appear.
+
+Call the `migrate` tool with:
+- `vault_path` = `VAULT_PATH` (absolute path confirmed in Step 1)
+- `vault_name` = `MCP_NAME` (e.g. `mcbrain-ai-science`)
+
+**This first call takes ~30 seconds** while the launcher creates the venv
+and downloads the FastEmbed model. Tell the user:
+
+> "Calling the migrate tool now. The first call will take ~30 seconds while
+> the engine sets itself up — Python virtual environment creation, fastembed
+> + numpy + mcp install (~50 MB of pip downloads), and the FastEmbed
+> embedding model (~30 MB). Subsequent calls are instant. If Claude Desktop
+> shows a 'failed to connect to MCP' error during this first call, that's
+> the connection timing out during bootstrap — quit and reopen Claude
+> Desktop once more, the venv will be ready and the second attempt will be
+> instant."
+
+### What `migrate` does
 
 1. Ensures `VAULT_PATH/.mcbrain/` exists.
 2. If a legacy PR #4 `.mcbrain/{bin,venv}/` is present (carry-over from an
-   older McBrain install), reads `index.db`'s meta. If the embedding model+dim
-   match the current engine, the index is preserved and the `bin/`/`venv/`
-   directories are removed. If they don't, the index is wiped for rebuild.
-3. Writes/updates the vault's entry in the platform-resolved registry (the
-   file `vaults.json` under the user-config dir — see the `mcp-server/README.md`
-   for the exact path on each OS).
-4. Patches `VAULT_PATH/CLAUDE.md` to the MCP-flavored Query operation and the
-   `## Query engine` section (mode marker `lexical+semantic (mcp)`). Idempotent.
-5. Runs an initial `index_sync`. On a freshly created vault `wiki/` is empty,
-   so this just timestamps the meta table.
+   older McBrain install), reads `index.db` meta. If the embedding model+dim
+   match, the index is preserved and `bin/`/`venv/` directories are removed.
+   Otherwise the index is wiped for rebuild.
+3. Writes/updates the vault's entry in `~/Library/Application Support/mcbrain/vaults.json`.
+4. Patches `VAULT_PATH/CLAUDE.md` with the MCP-flavored Query operation and
+   the `## Query engine` section (mode marker `lexical+semantic (mcp)`).
+5. Runs an initial `index_sync`. Empty wiki → timestamps the meta table.
 
-Surface the JSON output to the user. The `legacy_layout_removed`,
-`rebuilt_for_mismatch`, and `claude_md_patched` flags matter for trust — they
-make it visible what migrate actually did.
+Surface the JSON output. The `legacy_layout_removed`, `rebuilt_for_mismatch`,
+and `claude_md_patched` flags make it visible what migrate actually did.
 
-If Step 5.5 reported the runtime install failed (Python missing or pip error),
-**skip Step 8.5** and tell the user: *"Skipping vault provisioning — the
-mcbrain-engine runtime isn't installed yet. Fix the env issue surfaced in
-Step 5.5 and re-run `setup_bootstrap.py --install` followed by this step.
-Until then, the wiki is searchable lexically only via the engine's fallback
-mode."*
+### Recovery from first-launch timeout
 
-**Commit (Git strategy only).** If the backup strategy is git, present a
-copy-paste block (do not run git directly):
+If Claude Desktop shows "failed to connect to MCP" during the first call:
+- The launcher is still running in the background, finishing the pip install
+- Wait ~60 seconds, then quit and reopen Claude Desktop
+- In the new session, retry the migrate call — it'll skip the bootstrap and
+  succeed instantly
+
+If the launcher genuinely failed (network, missing Python), Claude Desktop's
+MCP debug panel will show the launcher's stderr output, which says exactly
+what went wrong. Surface that to the user and walk through the fix
+(install Python, retry, etc.).
+
+### Commit (Git strategy only)
+
+If the backup strategy is git, present a copy-paste block:
 
 ```bash
 cd VAULT_PATH && git add CLAUDE.md && git commit -m "init: provision query engine" && git push
