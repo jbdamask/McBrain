@@ -1,0 +1,3 @@
+# Test dependencies. Install on top of mcbrain-ops/references/requirements.txt
+# (which provides fastembed + numpy).
+pytest>=8.0,<9

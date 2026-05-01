@@ -569,14 +569,30 @@ def rrf_fuse(rank_lists: list[list[str]], k: int = RRF_K) -> dict[str, float]:
 
 
 def make_excerpt(text: str, max_chars: int = 240) -> str:
-    snippet = text.strip().splitlines()
+    """Return a short excerpt of `text` for display in query results.
+
+    Skips a leading YAML frontmatter block (between `---` markers), markdown
+    headings, and blank lines, returning the first substantive body line.
+    Falls back to a flattened version of the whole text if nothing else qualifies.
+    """
+    lines = text.strip().splitlines()
+    in_frontmatter = False
+    if lines and lines[0].strip() == "---":
+        in_frontmatter = True
+        lines = lines[1:]
+
     body = ""
-    for line in snippet:
-        line = line.strip()
-        if not line or line.startswith("---") or line.startswith("#"):
+    for line in lines:
+        stripped = line.strip()
+        if in_frontmatter:
+            if stripped == "---":
+                in_frontmatter = False
             continue
-        body = line
+        if not stripped or stripped.startswith("#"):
+            continue
+        body = stripped
         break
+
     if not body:
         body = " ".join(text.split())
     return (body[:max_chars] + "…") if len(body) > max_chars else body

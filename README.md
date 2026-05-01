@@ -100,6 +100,21 @@ McBrain/
 └── LICENSE
 ```
 
+## Running tests
+
+The query engine has a pytest suite under [`tests/`](./tests/) covering pure-function unit tests, the CLAUDE.md patcher, the index lifecycle (rebuild / sync / status), search behavior (lexical cascade, semantic recall, hybrid query, lazy text fetch), and a full end-to-end lifecycle through the script's CLI. Organized following Kent C. Dodds' [Testing Trophy](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications): the bulk of the investment lives in integration tests with a real SQLite DB and a real FastEmbed embedder.
+
+```sh
+python3 -m venv .test-venv
+.test-venv/bin/pip install \
+  -r plugins/mcbrain/skills/mcbrain-ops/references/requirements.txt \
+  -r tests/requirements.txt
+
+.test-venv/bin/python -m pytest tests/ -v
+```
+
+First run downloads the FastEmbed model (~30 MB) into `~/.cache/fastembed/`. Subsequent runs reuse it and complete the full suite in a few seconds. See [`tests/README.md`](./tests/README.md) for layout and design notes.
+
 ## License
 
 See [LICENSE](./LICENSE).
