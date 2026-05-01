@@ -305,7 +305,7 @@ underlying shell is zsh, Git Bash, WSL, or `cmd.exe`.
 ### Detect what's already there and surface env diagnostics
 
 ```bash
-python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --check
+python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --check
 ```
 
 The script prints OS / Python version / `rg` detection (or platform-specific
@@ -320,7 +320,7 @@ Step 5.5 cannot install the runtime, so flag clearly.
 ### Install the runtime
 
 ```bash
-python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --install
+python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --install
 ```
 
 If the runtime is already installed (additional McBrain on this machine), the
@@ -340,7 +340,7 @@ The runtime is useless until both Claude Code and Claude Desktop know to
 launch it. The bootstrap script handles both, idempotently:
 
 ```bash
-python3 plugins/mcbrain/mcp-server/setup_bootstrap.py --register
+python3 "${CLAUDE_PLUGIN_ROOT}/mcp-server/setup_bootstrap.py" --register
 ```
 
 What it writes:
