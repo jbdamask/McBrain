@@ -1,6 +1,6 @@
 ---
 name: mcbrain-setup
-description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. Handles vault directory scaffolding, the CLAUDE.md schema, the filesystem MCP config block, and the mcbrain-engine MCP runtime install. Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema, mcbrain-engine MCP for hybrid query) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
+description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. THIS IS NOT A PLUGIN-BUILDER FLOW — the McBrain plugin is already built and shipped; this skill only provisions a new vault using the existing plugin. Do NOT render an intake card with project-type selectors ("Home maintenance", "Renovation & projects", etc.), do NOT ask "What will this McBrain be for?", do NOT ask "Which skills/commands would you like included?", and do NOT title the tab "Create new McBrain X variant" — those are plugin-builder behaviors and do not apply to McBrain setup. Use plain conversational Q&A; the complete list of inputs to gather is in the SKILL's "Required intake" section. Handles vault directory scaffolding, the CLAUDE.md schema, the filesystem MCP config block, and the mcbrain-engine MCP runtime install. Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema, mcbrain-engine MCP for hybrid query) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
 ---
 
 # McBrain Setup
@@ -111,6 +111,77 @@ Yes, this means you'll sometimes ask a question whose answer the user
 finds slightly inconvenient. That's still better than running a
 sandbox check that gives you a false answer and propagating that lie
 into setup decisions.
+
+---
+
+## ⛔ This is NOT a plugin-builder workflow — do not behave like one
+
+The McBrain plugin is **already built and shipped**. This SKILL only
+provisions a new *vault* using the existing plugin. There is no
+per-vault customization, no "project type" axis, no per-vault skills
+to pick. Every McBrain vault has the same structure (`raw/`, `wiki/`,
+`CLAUDE.md`, the same MCP config) regardless of topic.
+
+If your UI is about to render any of the following, **STOP** — that's
+Cowork's plugin-builder hijacking the flow, not this SKILL:
+
+- A "McBrain details" intake card with project-type selectors
+  (e.g. "Home maintenance", "Renovation & projects", "General knowledge
+  base", "Other")
+- A "What will this McBrain be for?" question
+- An "Any skills or commands you'd like included?" picker
+- A "Pick the features you want" form
+- A tab title like "Create new McBrain *X* variant"
+
+None of these belong in McBrain setup. Users typically run setup
+multiple times for different topics (`mcbrain-house`, `mcbrain-finance`,
+`mcbrain-clinical`, etc.); offering a different intake each time
+breaks their muscle memory and confuses them.
+
+**Use plain conversational Q&A only** — one or two text questions per
+turn, no cards, no forms, no project-type cards. The exact list of
+questions to ask is in the "Required intake" section below; do not
+add to it.
+
+---
+
+## Required intake — ask exactly these, in this order
+
+This is the **complete** list of inputs setup needs from the user.
+Gather them in plain conversational turns (not a form), in roughly
+this order, and **do not invent additional questions**. Once you have
+them, run setup end-to-end without going back to ask more.
+
+| # | Input | Step | Notes |
+|---|---|---|---|
+| 1 | `OS_TYPE` ∈ {`mac`, `windows`} | 0 | Try the directory-grant deduction first, then ask if unclear. |
+| 2 | `MCP_NAME` (lowercase-hyphen, e.g. `mcbrain-house`) | 1 | Derived from the user's plain-English name choice. |
+| 3 | `VAULT_PATH` (absolute) | 1 | Suggest a default (`~/Documents/<MCP_NAME>` on Mac, `%USERPROFILE%\Documents\<MCP_NAME>` on Windows); accept user override. |
+| 4 | `BACKUP_STRATEGY` ∈ {`git`, `google-drive`, `none`} | 2 | Three buttons, no other options. |
+| 5 | `GITHUB_USERNAME` *(only if BACKUP_STRATEGY == git)* | A1 | Used to construct `REPO_URL`. |
+| 6 | `gh` CLI installed *(only if BACKUP_STRATEGY == git)* | A2 | Ask the user to paste `gh --version` output. **Never** check via Bash — see the STOP block above. If not installed, present the install command for `OS_TYPE`. |
+| 7 | `PYTHON_OK` (Python 3.10+ on host) | 5.5 | Ask the user to paste `python3 --version` (Mac) or `python --version` (Windows). **Never** check via Bash. |
+| 8 | `NOTION_DB_INTENT` ∈ {`yes-create`, `yes-existing`, `no`} | 8b | If `yes-*`, first verify a Notion MCP connector is loaded (enumerate tools, look for ones whose names contain `notion`). If absent, tell the user to enable it from claude.ai → Connectors before continuing Step 8 — don't try to install one yourself. |
+
+**Do NOT ask any of the following**, even if it seems helpful:
+
+- *"What will this McBrain be used for?"* / *"What's the topic?"* —
+  irrelevant. McBrain works the same for every topic.
+- *"Which skills/commands would you like included?"* — none. The plugin
+  ships with a fixed set of skills; nothing is added per-vault.
+- *"Want any custom features?"* — there are none.
+- *"Should I create a custom prompt for it?"* — no.
+- *"Pick a project type"* — there is no project-type axis.
+
+If the user volunteers info beyond the required list (e.g. "it's for
+home maintenance"), just acknowledge it and move on; don't store it
+as a setup variable or alter the vault structure based on it.
+
+**Ordering tip**: Items 1–4 can be asked up front in one or two short
+turns. Items 5–6 are conditional on git being chosen. Items 7 (Python
+check) and 8 (Notion intent) can also be asked early — that lets the
+user install Python or enable the Notion connector in parallel while
+later setup steps run, instead of blocking at Step 5.5 or Step 8b.
 
 ---
 
