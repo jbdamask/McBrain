@@ -22,14 +22,73 @@ Sets up McBrain — a personal LLM-maintained knowledge base — end-to-end for 
 
 ## Execution policy
 
-Do as much of this setup yourself as possible using available tools (Bash, Write, Edit, Read, etc.). Only defer to the user when a step genuinely cannot be performed by Claude — for example:
+This SKILL is most often run from **Claude Desktop / Cowork**. Read the next
+section ("How Cowork's environment differs") before doing anything — it
+determines which steps you do yourself and which you ask the user to run.
 
-- GUI-only actions (installing Obsidian, clicking through Google Drive for Desktop preferences, installing browser extensions, signing into accounts)
-- Interactive OAuth flows (`gh auth login` browser handoff)
-- Decisions that require the user's input (vault name, path, backup strategy, confirming destructive actions)
-- Restarting Claude Desktop
+In short: **file operations** on the user's Mac (create directories, write
+files, edit JSON config) — do them yourself via Read/Write/Edit on granted
+directories. **Commands that run as processes on the user's Mac** (git, gh,
+brew, xcode-select, opening a browser) — present a copy-paste block in a
+fenced code box and ask the user to run it in their Terminal.
 
-For everything else — creating directories, writing files, initializing git, creating the GitHub repo via `gh`, appending to `claude_desktop_config.json`, committing, pushing — run the commands yourself. Don't hand the user a shell snippet and ask them to paste it when you can just execute it. When you do need the user to act, be explicit about why (e.g., "this step requires the Obsidian GUI") and give them the exact steps to follow.
+Defer to the user only when:
+
+- The step is a Mac-side command that runs as a process (see above)
+- The step is GUI-only (installing Obsidian, clicking through Google Drive
+  preferences, installing browser extensions, signing into accounts)
+- The step is an interactive OAuth flow (`gh auth login` browser handoff)
+- The step is a decision (vault name, path, backup strategy, confirming a
+  destructive action)
+- The step requires restarting Claude Desktop
+
+For file operations, run them yourself — don't make the user open a file
+editor when you can use Write/Edit on a granted directory.
+
+---
+
+## How Cowork's environment differs from Claude Code
+
+This is the most common source of confusion when running setup, so be
+explicit:
+
+1. **Cowork's Bash tool runs in a Linux sandbox, NOT on the user's Mac.**
+   Anything you run via the Bash tool — `git`, `gh`, `brew`, `xcode-select`,
+   `python3 -m venv`, `pip install`, etc. — executes inside the sandbox and
+   does NOT affect the user's Mac. Do not try to install dependencies, run
+   git commands, or invoke `gh` from inside the Bash tool when running in
+   Cowork. The user will not see the effect, and you'll create confusion
+   thinking it worked.
+
+2. **Cowork CAN read and write files on the user's Mac** through folder
+   grants. When the user clicks the **+** button (or "Add folder") in
+   Cowork and selects a directory, that directory gets mounted into the
+   sandbox and becomes readable / writable by Cowork's Read / Write / Edit
+   tools. You can request access to **any directory on the user's
+   filesystem** the user is willing to grant — including system dirs like
+   `~/Library/Application Support/`. Be explicit when asking: tell the user
+   exactly which folder to select and why.
+
+3. **MCP servers (including the filesystem MCPs Claude Desktop registers)
+   run natively on the user's Mac**, not in the sandbox. They have full Mac
+   filesystem access. That's why the v2 query-engine architecture works:
+   the engine MCP runs natively when Claude Desktop launches it, even
+   though the chat session lives in a sandbox.
+
+**Operational rule of thumb:**
+
+| Task | In Cowork |
+|------|-----------|
+| Read / write a file on the Mac | Granted folder + Read/Write/Edit tool — do it yourself |
+| Edit a JSON config (e.g., `claude_desktop_config.json`) | Granted folder + Edit tool — do it yourself |
+| Run `git`, `gh`, `brew`, `xcode-select`, etc. on the Mac | Present copy-paste block — user runs in Terminal |
+| Install Python or other system software | Present install command — user runs |
+| Authenticate with a remote service (gh auth, OAuth) | Present command + walk user through the prompts |
+| Open a browser tab or click a UI element | Tell the user; you can't do GUI |
+
+If you find yourself about to run `git init`, `git push`, `gh repo create`,
+`brew install`, or any other Mac-side command via the Bash tool while in
+Cowork — stop. Present the command to the user instead.
 
 ---
 
@@ -74,44 +133,54 @@ Set up GitHub first — the remote repo needs to exist before the vault is creat
 
 Tell the user: Go to [github.com](https://github.com) and create a free account. Come back when you have a username.
 
-**A2 — Install the GitHub CLI**
+**A2 — Install the GitHub CLI** *(present to the user; do not run from Cowork's Bash)*
 
-- macOS (with Homebrew): `brew install gh`
-  - If Homebrew isn't installed: `brew` won't be found. Tell the user to first run `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"` in Terminal, then retry.
-- Windows: `winget install --id GitHub.cli` (or direct them to [cli.github.com](https://cli.github.com))
+Tell the user to run one of these in their **Terminal** (not Claude's Bash
+tool):
+
+- macOS with Homebrew installed: `brew install gh`
+  - If Homebrew isn't installed, point them at [brew.sh](https://brew.sh) for
+    the installer, then retry the gh install.
+- Windows: `winget install --id GitHub.cli` (or [cli.github.com](https://cli.github.com))
 - Linux: [cli.github.com/manual/installation](https://cli.github.com/manual/installation)
 
-Verify: `gh --version`
+Ask the user to run `gh --version` in their Terminal and paste the output
+back so you can confirm the install succeeded.
 
-**A3 — Authenticate**
+**A3 — Authenticate** *(present to the user; do not run from Cowork's Bash)*
+
+Tell the user to run in their Terminal:
 
 ```bash
 gh auth login
 ```
 
-Walk the user through the prompts:
+Walk them through the prompts:
 - "What account do you want to log into?" → GitHub.com
 - "What is your preferred protocol?" → HTTPS
 - "Authenticate Git with your GitHub credentials?" → Yes
-- "How would you like to authenticate?" → Login with a web browser → follow the one-time code flow
+- "How would you like to authenticate?" → Login with a web browser → follow
+  the one-time code flow
 
-**A4 — Create the private repo on GitHub**
+Ask the user to confirm authentication succeeded before continuing.
 
-Create the remote repo now, before any local files exist:
+**A4 — Create the private repo on GitHub** *(present to the user)*
+
+Tell the user to run in their Terminal (substituting the actual `MCP_NAME`):
 
 ```bash
 gh repo create MCP_NAME --private
-```
-
-This creates an empty private repo on GitHub. Capture the repo URL:
-
-```bash
 gh repo view MCP_NAME --json url --jq .url
 ```
 
-Store this as `REPO_URL` (e.g., `https://github.com/<username>/MCP_NAME`). You'll set this as the remote origin when the local vault is initialized in Step 3.
+The second command prints the repo URL. Ask the user to paste it back.
+Capture it as `REPO_URL` (e.g., `https://github.com/<username>/MCP_NAME`).
+You'll write it into the vault's CLAUDE.md and use it as the remote origin
+when the user initializes the local repo (Step 3, also a user-run step).
 
-Confirm with the user: *"Created private repo at `REPO_URL`. We'll link the vault to it in the next step."*
+Confirm with the user: *"Created private repo at `REPO_URL`. We'll link the
+vault to it in the next step — that one is also a Terminal command you'll
+run yourself."*
 
 ---
 
@@ -133,6 +202,22 @@ If confirmed, note the selection and continue to Step 3.
 
 ## Step 3: Create the vault
 
+### Grant Cowork access to the vault's parent directory
+
+Before creating any files, the user needs to grant Cowork access to the
+parent directory of `VAULT_PATH` (typically `~/Documents/`). Tell them:
+
+> "I'm about to create the vault directory at `VAULT_PATH`. Please grant me
+> access to its parent folder (e.g., `~/Documents/`) by clicking the **+**
+> button (or 'Add folder') in Cowork — that lets me create the vault and
+> its subdirectories directly. If you'd rather, you can create the empty
+> vault folder yourself in Finder first and grant access to that folder
+> instead."
+
+After the user grants access, verify by listing the granted mount.
+
+### Create the structure
+
 Create the following structure under `VAULT_PATH`:
 
 ```
@@ -151,7 +236,14 @@ VAULT_PATH/
 └── CLAUDE.md               # Schema + instructions for Claude (the key config file)
 ```
 
-Use bash to create these dirs. Also create placeholder files for index.md, log.md, overview.md, and CLAUDE.md using the templates in the reference files below.
+**Do this via the Write tool against the granted parent mount, not via
+`mkdir`/`touch` in Cowork's Bash sandbox** — the sandbox is Linux and
+doesn't reach the user's Mac filesystem. (You CAN use `mkdir -p` on the
+mount path through the Bash tool — that works because the mount bridges
+to the Mac. But Write tool is simpler for the file creation parts.)
+
+Create placeholder files for index.md, log.md, overview.md, and CLAUDE.md
+using the templates in the reference files below.
 
 Read `references/claude-md-template.md` to get the CLAUDE.md content.
 Read `references/index-template.md` to get the index.md starter.
@@ -223,23 +315,48 @@ For None:
 - No backup is configured. To set one up later, ask Claude to "set up McBrain backup".
 ```
 
-### Initialize git (Git strategy only)
+### Initialize git (Git strategy only) — *user runs this in Terminal*
 
-After all files are written:
+You should not run `git init`, `git remote add`, `git commit`, or `git push`
+from Cowork — Cowork's Bash sandbox doesn't reach the user's vault path,
+and even if it did, those calls would race with the vault's filesystem MCP
+and leave a stale `.git/index.lock`. Same rule applies in Claude Code: do
+not invoke git against the vault yourself.
+
+First, **write the `.gitignore` yourself** — that's a file operation, you
+can do it via the Write tool against the granted vault directory. The file
+should contain:
+
+```
+.DS_Store
+.obsidian/workspace*
+.obsidian/cache
+.mcbrain/index.db
+.mcbrain/index.db-*
+__pycache__/
+```
+
+Then **present** the following block for the user to run in their **Terminal**
+(substituting the actual `VAULT_PATH`, `REPO_URL`, and `MCP_NAME`):
 
 ```bash
 cd VAULT_PATH
 git init -b main
-printf '.DS_Store\n.obsidian/workspace*\n.obsidian/cache\n.mcbrain/index.db\n.mcbrain/index.db-*\n__pycache__/\n' > .gitignore
 git remote add origin REPO_URL
 git add -A
 git commit -m "init: MCP_NAME vault scaffolding"
 git push -u origin main
 ```
 
-Confirm the push succeeded. If it fails, check that `gh auth login` completed correctly and that `REPO_URL` is reachable.
+Ask the user to confirm the push succeeded. If it fails, check that
+`gh auth login` completed correctly and that `REPO_URL` is reachable.
 
-The gitignore excludes the per-vault `.mcbrain/index.db` and its SQLite WAL/SHM sidecars — those are rebuildable from `wiki/` content. Nothing else under `.mcbrain/` exists in the v2 layout: the engine source and venv live at the platform-resolved runtime root (see Step 5.5), not per-vault. A fresh clone on a new machine just runs `mcbrain-setup` once to install the runtime, then queries work immediately.
+The gitignore excludes the per-vault `.mcbrain/index.db` and its SQLite
+WAL/SHM sidecars — those are rebuildable from `wiki/` content. Nothing else
+under `.mcbrain/` exists in the v2 layout: the engine source and venv live
+at the platform-resolved runtime root (see Step 5.6), not per-vault. A
+fresh clone on a new machine just runs `mcbrain-setup` once to install the
+runtime, then queries work immediately.
 
 ---
 
@@ -265,12 +382,44 @@ Open [drive.google.com](https://drive.google.com) in a browser and confirm `CLAU
 
 ## Step 5: Configure filesystem MCP in Claude Desktop
 
-The filesystem MCP gives Claude read/write access to the vault. Add it to `claude_desktop_config.json`:
+The filesystem MCP gives Claude read/write access to the vault. We add it
+by editing Claude Desktop's MCP config file:
 
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Merge the following block under `"mcpServers"` (use the actual `MCP_NAME` value):
+### Grant Cowork access to the Claude config directory
+
+Tell the user:
+
+> "I need to edit your Claude Desktop config file to add this vault's
+> filesystem MCP. The file lives at `~/Library/Application Support/Claude/`.
+> Click the **+** button next to the chat input (or 'Add folder'), and
+> grant me access to `~/Library/Application Support/`. (`Library` is hidden
+> by default — in the folder picker, press Cmd-Shift-. to reveal it, or
+> press Cmd-Shift-G and type `~/Library/Application Support`.)
+>
+> This same grant will be reused in Step 5.6 to install the engine
+> runtime — one grant covers both steps. You can revoke the grant after
+> setup completes."
+
+Wait for the user to grant access. Verify by listing the granted mount with
+the Bash tool — you should see `Claude/` and possibly other Application
+Support subdirectories.
+
+### Edit the config
+
+Read `<application-support-mount>/Claude/claude_desktop_config.json`. If the
+file doesn't exist, create one with the structure:
+
+```json
+{
+  "mcpServers": {}
+}
+```
+
+Merge the following entry into `mcpServers` (use the actual `MCP_NAME` and
+`VAULT_PATH`, and preserve any existing entries — do NOT overwrite them):
 
 ```json
 "MCP_NAME": {
@@ -283,9 +432,9 @@ Merge the following block under `"mcpServers"` (use the actual `MCP_NAME` value)
 }
 ```
 
-If the file doesn't exist yet, create it with the full structure. If other MCP servers already exist, merge carefully — don't overwrite them.
-
-Show the user the final config before writing it and ask them to confirm.
+Show the user the final config before writing it and confirm. Then write
+via Edit tool — do NOT shell out to `cat > config.json` or similar from
+Cowork's Bash; that would write into the sandbox, not the user's Mac.
 
 ---
 
@@ -334,24 +483,13 @@ itself. Walk the user through granting access, then write files.
 - **MCP registration** added to `~/Library/Application Support/Claude/claude_desktop_config.json`
   under `mcpServers.mcbrain-engine`, pointing at the launcher.
 
-### Grant access to `~/Library/Application Support/`
+### Reuse the `~/Library/Application Support/` grant from Step 5
 
-Tell the user:
-
-> "I need filesystem access to `~/Library/Application Support/` to install the
-> engine runtime and register it with Claude. Click the **+** button next to
-> the chat input (or 'Add folder'), navigate to `Library/Application Support`
-> in your home folder, and select it. This is a one-time grant for setup —
-> you can remove the grant after."
-
-(Note: the `Library` folder is hidden by default on macOS; in Finder, press
-Cmd-Shift-. to show hidden folders, or use the keyboard shortcut Cmd-Shift-G
-and type `~/Library/Application Support`.)
-
-After the user grants access, verify by listing the new mount. Cowork will
-mount the granted folder under `/sessions/<session-id>/mnt/Application Support/`
-(or similar). Use the Bash tool to `ls` that mount and confirm the typical
-macOS subdirs (`Claude`, possibly others) are visible.
+You already asked the user to grant access to `~/Library/Application Support/`
+in Step 5. The same mount works here — no second grant needed. Verify the
+grant is still active by listing the mount with the Bash tool. If the user
+revoked it after Step 5, ask them to re-grant the same folder before
+continuing.
 
 ### Copy the engine runtime files
 
