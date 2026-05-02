@@ -58,10 +58,48 @@ Cowork's sandbox *can* read and write the user's host filesystem, but
 - Use `mcp__cowork__request_cowork_directory` to ask for a folder. The
   user approves; the folder mounts under `/sessions/<id>/mnt/...` in the
   sandbox.
-- After a grant, Read / Write / Edit / `ls` / `find` against the mount
-  path *do* reach the user's host filesystem. File operations are real.
+- After a grant, **Read / Write / Edit** against the mount path *do*
+  reach the user's host filesystem reliably. These tools run natively
+  on the host and bypass the sandbox FUSE bridge.
+- `ls` / `find` / `cat` (read-only Bash on the mount) are fine — read
+  paths are reliable.
 - MCP tools registered in Claude Desktop run **natively on the host**,
   not in the sandbox — that's how the v2 query engine works.
+
+### Bash WRITE operations on a granted mount are unreliable — use Write tool
+
+This bit is its own pitfall and has burned the SKILL repeatedly. **The
+Bash tool runs in the Linux sandbox even when its arguments point at a
+mounted host path.** The mount is a FUSE-style bridge, and *write*
+operations through that bridge are unreliable for anything beyond
+trivial directory creation:
+
+- Python `shutil.copy2()`, `cp`, `dd`, `tee >`, `cat > file`, `mv` from
+  Bash to a mount path can **report success but never flush** to the
+  host filesystem. Tiny files sometimes land; larger files (engine
+  source, binaries, anything ~10KB+) frequently don't.
+- **SQLite databases on a mount, written from inside the sandbox, will
+  hit `disk I/O error`** — WAL-mode locking doesn't survive the FUSE
+  boundary. Never run `sqlite3` or any Python SQLite write from Bash
+  against a mounted path.
+
+**Operational rule:**
+
+| Operation on a mounted host path | Tool |
+|---|---|
+| Create a directory (`mkdir -p`) | Bash is fine — small, idempotent |
+| Read a file (`cat`, `head`, `Read`) | Bash or Read tool — both fine |
+| List directory (`ls`, `find`) | Bash is fine |
+| **Write a file** | **Write tool — never `cp` / `cat >` / `tee` / `shutil.copy` from Bash** |
+| **Edit a file** | **Edit tool — never `sed -i` / `awk` rewrite from Bash** |
+| Run SQLite (any write, even read-only with WAL) | Don't. The engine MCP handles all DB ops natively. |
+| Run Python scripts that touch the mount | Don't from Bash. If logic must run on the host, present the command for the user to run in their Terminal — or call the engine MCP, which runs natively. |
+
+If you find yourself reaching for `cp ${CLAUDE_PLUGIN_ROOT}/... <mount>/`
+or `python3 -c "shutil.copy(...)"` to install runtime files — **stop**.
+Read each source file with the Read tool, then write it to the
+destination with the Write tool. That's how Step 5.6 is specified, and
+it's the only path that reliably lands files on the host.
 
 ### Mental model
 
@@ -714,19 +752,37 @@ Pick the right paths for `OS_TYPE`:
 
 ### Copy the engine runtime files
 
-Read the runtime source files from the plugin install:
+> **Sandbox reminder (this is where the SKILL has broken before)**:
+> install these files using **Read + Write tools only** — never `cp`,
+> `shutil.copy*`, `cat > file`, `tee`, `mv`, or any other Bash-side
+> write to the mount. Bash writes through Cowork's FUSE bridge can
+> silently fail to flush, leaving files that look fine in `ls -l` but
+> are truncated, missing, or invisible to the host. Tiny files
+> sometimes land; engine source files (~10–40 KB+) often don't. The
+> Write tool runs natively on the host and is the only reliable path.
 
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/launcher.py`
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/mcbrain_engine.py`
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/paths.py`
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/registry.py`
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/schema.sql`
-- `${CLAUDE_PLUGIN_ROOT}/mcp-server/requirements.txt`
+For each runtime source file:
 
-Create the destination directory `<application-support-mount>/mcbrain-engine/`
-if it doesn't exist (use Bash `mkdir -p` against the mount path). Then write
-each source file to that destination using the Write tool. Verify all six
-files are present at the destination via `ls`.
+1. Read it from the plugin install with the **Read** tool:
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/launcher.py`
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/mcbrain_engine.py`
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/paths.py`
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/registry.py`
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/schema.sql`
+   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/requirements.txt`
+2. Write it to the destination with the **Write** tool — destination
+   path is `<application-support-mount>/mcbrain-engine/<filename>`.
+
+Creating the destination directory `<application-support-mount>/mcbrain-engine/`
+with Bash `mkdir -p` against the mount path is fine — `mkdir` is small
+and idempotent and doesn't trigger the FUSE flush problem. The danger
+is *file-content* writes, not directory creation.
+
+After all six files are written, verify with `ls -l` on the mount and
+**check the byte sizes match the source files** (a 0-byte or
+truncated `mcbrain_engine.py` is the classic FUSE-flush failure mode).
+If any size is wrong or any file is missing, re-run the Write for that
+file — do not try to "fix" it with Bash.
 
 ### Register the MCP entry
 
