@@ -183,6 +183,29 @@ check) and 8 (Notion intent) can also be asked early — that lets the
 user install Python or enable the Notion connector in parallel while
 later setup steps run, instead of blocking at Step 5.5 or Step 8b.
 
+### How to ask: use `AskUserQuestion` for every multi-choice item
+
+Every intake item that is **multi-choice** (OS, backup strategy, Notion
+intent) **must** be asked via the built-in `AskUserQuestion` tool. The
+later step descriptions hand you the **exact call shape** to use —
+question text, header chip, option labels, option descriptions, and
+which option to mark `(Recommended)`. Use those shapes verbatim. Do
+not paraphrase, do not invent your own labels, do not add a "Custom"
+or "Other" option (the tool always adds "Other" automatically).
+
+Why this matters: `AskUserQuestion` is what renders the rich card UI
+the user sees in chat. Cowork's plugin-builder uses the same tool —
+the only difference between a confusing plugin-builder intake and a
+deterministic McBrain setup is the questions and option labels we feed
+it. If you free-style this, every user gets a different experience;
+if you follow the prescribed shapes, every McBrain setup looks the
+same.
+
+For **free-text** items (vault name, vault path, GitHub username,
+version-string paste-backs), `AskUserQuestion` doesn't fit (it requires
+2-4 options). Ask in plain conversational text instead. Those spots
+are also called out in the step descriptions.
+
 ---
 
 ## What this skill does
@@ -316,12 +339,20 @@ reliably detect the user's OS from inside Cowork's Linux sandbox, so:
    `mcp__cowork__request_cowork_directory` with `~` (home) and look at
    the returned path. `/Users/<name>` → macOS. `C:\Users\<name>` or
    `/c/Users/<name>` → Windows. If the call result clearly identifies
-   the OS, use that.
-2. **Otherwise, ask in one short prompt:**
+   the OS, store the answer and skip step 2.
+2. **Otherwise, call `AskUserQuestion` with this exact shape:**
 
-   > "Quick check before we start: are you on a **Mac** or a **PC**
-   > (Windows)? Setup paths and a couple of commands differ — I'll use
-   > the right ones for your platform."
+   ```yaml
+   questions:
+     - question: "Are you setting up McBrain on a Mac or a Windows PC?"
+       header: "OS"
+       multiSelect: false
+       options:
+         - label: "Mac"
+           description: "Apple computer running macOS."
+         - label: "Windows"
+           description: "PC running Windows 10 or 11."
+   ```
 
 Store the answer as `OS_TYPE` ∈ {`mac`, `windows`} and use it to pick
 the right paths/commands from the reference table below for every later
@@ -382,12 +413,29 @@ Store the confirmed path as `VAULT_PATH` and the MCP name as `MCP_NAME`. Expand 
 
 ## Step 2: Choose backup strategy
 
-Ask before creating any files — the backup choice affects how the vault is initialized.
+Ask before creating any files — the backup choice affects how the vault
+is initialized.
 
-> "Do you want to back McBrain up automatically? I recommend one of these:
-> - **Git + GitHub** — stores every version of every wiki page with labeled history. If Claude ever makes a bad edit, you can roll back. Free private repo. Slightly more setup.
-> - **Google Drive** — simplest option. Just syncs the folder automatically, like Dropbox. No terminal needed.
-> - **None** — keeps everything local only. Not recommended, but fine if you're sure."
+**Call `AskUserQuestion` with this exact shape:**
+
+```yaml
+questions:
+  - question: "How do you want to back up McBrain?"
+    header: "Backup"
+    multiSelect: false
+    options:
+      - label: "Git + GitHub (Recommended)"
+        description: "Versioned history of every wiki page; roll back any bad edit. Free private repo. Slight extra setup."
+      - label: "Google Drive"
+        description: "Simplest option — auto-syncs the folder like Dropbox. No terminal needed."
+      - label: "None"
+        description: "Local only. Not recommended; the vault is unrecoverable if the machine dies."
+```
+
+Store the choice as `BACKUP_STRATEGY` ∈ {`git`, `google-drive`, `none`}.
+If the user picks "Other" and writes free text, parse it into one of
+the three values; if it's not clearly one of them, re-ask using the
+same call shape.
 
 ---
 
@@ -420,15 +468,24 @@ the user to run `gh repo view` and paste the URL back.
 > that. Reporting "gh isn't installed" based on a sandbox check is wrong
 > and will confuse the user. Just ask them.
 
-Ask the user **first**:
+**Call `AskUserQuestion` with this exact shape:**
 
-> "Do you already have the GitHub CLI (`gh`) installed? Run `gh --version`
-> in your **Terminal** (macOS) or **PowerShell** (Windows) and paste the
-> output. If it errors, I'll walk you through the install."
+```yaml
+questions:
+  - question: "Do you have the GitHub CLI (`gh`) installed on your computer?"
+    header: "gh installed?"
+    multiSelect: false
+    options:
+      - label: "Yes, already installed"
+        description: "I've used gh before, or I just ran `gh --version` and it worked."
+      - label: "No / not sure"
+        description: "I haven't installed it, or running `gh --version` errors. Walk me through the install."
+```
 
-If the user confirms `gh` is installed, skip the install command below
-and continue to **A3**. Otherwise, tell them to run one of these in their
-**Terminal** (not Claude's Bash tool):
+If the user picks **Yes**, continue to **A3**.
+
+If the user picks **No / not sure**, present the install command for
+their `OS_TYPE` (do NOT install it yourself from Cowork's Bash):
 
 - macOS with Homebrew installed: `brew install gh`
   - If Homebrew isn't installed, point them at [brew.sh](https://brew.sh) for
@@ -436,8 +493,10 @@ and continue to **A3**. Otherwise, tell them to run one of these in their
 - Windows: `winget install --id GitHub.cli` (or [cli.github.com](https://cli.github.com))
 - Linux: [cli.github.com/manual/installation](https://cli.github.com/manual/installation)
 
-Ask the user to re-run `gh --version` and paste the output back so you
-can confirm the install succeeded.
+Then ask in plain text: *"Run `gh --version` in your Terminal /
+PowerShell once the install finishes and paste the output back."* The
+paste-back is a free-text confirmation; don't use `AskUserQuestion` for
+it (the user is providing a version string, not picking from options).
 
 **A3 — Authenticate** *(present to the user; do not run from Cowork's Bash)*
 
@@ -977,13 +1036,25 @@ Then continue to Step 9 — do not block setup on this.
 
 **8b — Ask what the user wants.**
 
-> "I can pair this McBrain with a Notion research tracker. Three options:
-> 1. **Use an existing Notion database** — paste the URL and I'll register it.
-> 2. **Create a new database** — I'll spin one up with the standard schema (Task name, Status, Priority, Created date, Last updated date, Notes).
-> 3. **Skip** — you can always add one later by running the `notion-research-db` skill.
-> Which would you like?"
+**Call `AskUserQuestion` with this exact shape:**
 
-If they pick **3 (skip)**, continue to Step 9.
+```yaml
+questions:
+  - question: "Want a Notion research tracker paired with this McBrain? Pick one:"
+    header: "Notion DB"
+    multiSelect: false
+    options:
+      - label: "Use existing database"
+        description: "I already have a Notion DB I want to use. I'll paste the URL."
+      - label: "Create a new one"
+        description: "Spin up a new database with the standard schema (Task, Status, Priority, dates, Notes)."
+      - label: "Skip for now"
+        description: "Maybe later — I can run the `notion-research-db` skill any time to add one."
+```
+
+Store the choice as `NOTION_DB_INTENT` ∈ {`yes-existing`, `yes-create`, `no`}.
+
+If they pick **Skip for now** (`no`), continue to Step 9.
 
 **8c — Existing database.** If they pick option 1, ask for the database URL and a friendly name (default to the database title). Use the Notion search/fetch tool to verify the URL resolves to a real database — if not, surface the error and ask the user to re-paste rather than guessing. Capture:
 
