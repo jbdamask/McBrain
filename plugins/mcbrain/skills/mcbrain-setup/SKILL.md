@@ -90,6 +90,35 @@ If you find yourself about to run `git init`, `git push`, `gh repo create`,
 `brew install`, or any other Mac-side command via the Bash tool while in
 Cowork — stop. Present the command to the user instead.
 
+### Stop deliberating about what's on the user's Mac — just ask or trust
+
+A frequent failure mode in this SKILL is Claude burning tokens trying to
+figure out (via the sandbox) what's installed on the user's Mac. Don't.
+**The sandbox tells you nothing about the Mac.** `python3 --version` from
+Bash inspects the sandbox's Linux Python, not the Mac's. `which gh` from
+Bash tells you nothing about whether gh is on the Mac. Stop these checks.
+
+Instead, follow these rules:
+
+- **For prerequisite tools** (Python, gh, ripgrep): ask the user once, in
+  one prompt, with install instructions for what they don't have. Trust
+  their answer. If they're wrong, the failure happens later with a clear
+  error message — they'll fix it and retry.
+- **For directory access on the Mac**: use the Cowork directory-request
+  tool **`mcp__cowork__request_cowork_directory`**. Pass it the absolute
+  path you need (e.g., `~/Documents/` or `~/Library/Application Support/`).
+  This is the explicit, documented way to ask for a folder grant — much
+  cleaner than telling the user to "click the + button". If the tool
+  isn't available in this session for some reason, fall back to instructing
+  the user to use the folder picker manually, but try the tool first.
+- **For confirming the user did a Terminal step** (e.g. `gh auth login`,
+  `git push`): ask them one yes/no question — "did that succeed?" Don't
+  try to verify via the sandbox; you can't.
+
+The setup should feel like a series of small, decisive moves — *"do this,
+then this, then this"* — not a forensic investigation of the user's
+machine. When unsure, ask.
+
 ---
 
 ## Step 1: Name and locate the vault
@@ -204,17 +233,12 @@ If confirmed, note the selection and continue to Step 3.
 
 ### Grant Cowork access to the vault's parent directory
 
-Before creating any files, the user needs to grant Cowork access to the
-parent directory of `VAULT_PATH` (typically `~/Documents/`). Tell them:
-
-> "I'm about to create the vault directory at `VAULT_PATH`. Please grant me
-> access to its parent folder (e.g., `~/Documents/`) by clicking the **+**
-> button (or 'Add folder') in Cowork — that lets me create the vault and
-> its subdirectories directly. If you'd rather, you can create the empty
-> vault folder yourself in Finder first and grant access to that folder
-> instead."
-
-After the user grants access, verify by listing the granted mount.
+Call **`mcp__cowork__request_cowork_directory`** with the parent directory
+of `VAULT_PATH` (typically `~/Documents/`). The user gets a grant prompt
+in Cowork. Wait for the grant, then verify by listing the granted mount
+with the Bash tool. If `mcp__cowork__request_cowork_directory` is
+unavailable, fall back to telling the user to click the **+** button in
+Cowork and grant access to the parent folder manually.
 
 ### Create the structure
 
@@ -388,24 +412,20 @@ by editing Claude Desktop's MCP config file:
 - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
-### Grant Cowork access to the Claude config directory
+### Grant Cowork access to `~/Library/Application Support/`
 
-Tell the user:
+Call **`mcp__cowork__request_cowork_directory`** with `~/Library/Application Support/`.
+This same grant covers both Step 5 (editing `claude_desktop_config.json`)
+and Step 5.6 (installing the engine runtime under `mcbrain-engine/`) — one
+grant, two steps.
 
-> "I need to edit your Claude Desktop config file to add this vault's
-> filesystem MCP. The file lives at `~/Library/Application Support/Claude/`.
-> Click the **+** button next to the chat input (or 'Add folder'), and
-> grant me access to `~/Library/Application Support/`. (`Library` is hidden
-> by default — in the folder picker, press Cmd-Shift-. to reveal it, or
-> press Cmd-Shift-G and type `~/Library/Application Support`.)
->
-> This same grant will be reused in Step 5.6 to install the engine
-> runtime — one grant covers both steps. You can revoke the grant after
-> setup completes."
+If `mcp__cowork__request_cowork_directory` is unavailable, fall back to
+telling the user: *"Click + (or 'Add folder') and grant access to
+`~/Library/Application Support/`. The `Library` folder is hidden by default —
+press Cmd-Shift-. in the folder picker to reveal it, or press Cmd-Shift-G
+and type the path."*
 
-Wait for the user to grant access. Verify by listing the granted mount with
-the Bash tool — you should see `Claude/` and possibly other Application
-Support subdirectories.
+Wait for the grant. Verify by listing the granted mount with the Bash tool.
 
 ### Edit the config
 
@@ -440,32 +460,35 @@ Cowork's Bash; that would write into the sandbox, not the user's Mac.
 
 ## Step 5.5: Confirm Python prerequisite
 
-McBrain's query engine runs as a local MCP server (`mcbrain-engine`) launched
-natively by Claude Desktop. **Required prerequisite: Python 3.10+ on the
-user's Mac.** Modern macOS doesn't ship Python by default, so confirm before
-proceeding.
+The query engine needs Python 3.10+ on the user's Mac. **Do not try to
+detect this from the sandbox** — sandbox python ≠ Mac python. Just ask
+once and trust the answer.
 
-This SKILL runs inside Cowork's sandbox, which can't directly check the Mac's
-Python. Ask the user:
+Send the user this single prompt:
 
-> "The query engine needs Python 3.10 or newer on your Mac. Most macOS users
-> don't have it pre-installed. Two ways to get it:
+> "Quick prerequisite check: McBrain's query engine needs **Python 3.10+
+> installed on your Mac**. (This is one-time — every McBrain on this
+> machine reuses the same Python.)
 >
-> 1. Open Terminal and run `xcode-select --install` (gets Python plus dev
->    tools — most reliable on Mac).
-> 2. Download from [python.org/downloads](https://www.python.org/downloads/) —
->    pick the latest 3.x macOS installer.
+> Run this in your Terminal:
 >
-> After installing, run `python3 --version` in Terminal to confirm it shows
-> 3.10 or higher. **Do you have Python 3.10+ installed already, or do you
-> need a moment to install it?**"
+> ```
+> python3 --version
+> ```
+>
+> - If it prints `Python 3.10` or higher → reply 'yes', and we'll move on.
+> - If it errors or prints an older version → install with `xcode-select
+>   --install` (recommended, gets Python plus dev tools) or download from
+>   [python.org/downloads](https://www.python.org/downloads/). Reply when
+>   done.
+>
+> (`ripgrep` is optional but makes search faster — `brew install ripgrep`
+> if you want it. Setup continues either way.)"
 
-If the user installs and confirms, continue. If they say they have it already,
-trust them — first MCP launch (Step 8.5) will fail with a clear error if
-they're wrong, and they can install and retry.
-
-`ripgrep` is optional (the engine falls back to `grep` / pure-Python search).
-Don't block on it. If the user wants to install it: `brew install ripgrep`.
+Wait for their reply. Trust it. If they're wrong, the launcher will fail
+with a clear stderr message at first MCP call (Step 8.5) and they can
+install Python and retry. Do not run `python3 --version` from Bash to
+"verify" — it tells you nothing useful.
 
 ---
 
