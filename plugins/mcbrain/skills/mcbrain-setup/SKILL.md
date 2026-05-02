@@ -9,6 +9,73 @@ Sets up McBrain — a personal LLM-maintained knowledge base — end-to-end for 
 
 **The idea in one sentence**: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent markdown wiki that compounds over time. Obsidian is the IDE; Claude is the programmer; McBrain is the codebase.
 
+---
+
+## ⛔ STOP — sandbox self-awareness (read this first)
+
+**You (the model running this SKILL) are inside Cowork's Linux sandbox.
+Your Bash tool sees the *sandbox*, NOT the user's host machine** (Mac or
+Windows). This is the single biggest source of broken setups, so be
+explicit with yourself before you run anything:
+
+### What the sandbox CANNOT tell you
+
+You cannot detect what's installed on the user's host. Period. The
+sandbox is a fresh Linux box; what's there has no relationship to what's
+on the user's Mac or PC.
+
+### Forbidden Bash commands in this SKILL
+
+**Never run any of these from the Bash tool — the result will mislead
+you and you will tell the user something false** (e.g. "gh isn't
+installed" when it actually is, just not in the sandbox):
+
+```
+python3 --version          which gh           gh --version
+python --version           which git          git --version
+which python / python3     which node         node --version
+which brew                 brew --version     xcode-select -p
+which winget               winget --version   which rg / rg --version
+which pip / pip3           pip --version      command -v <anything>
+```
+
+If you catch yourself thinking *"let me just check if X is installed"* —
+**STOP**. The check is meaningless. Instead:
+
+- **For tools the user runs themselves** (gh, git, brew, winget, python,
+  node, ripgrep): **ask the user to run the version command in their
+  own Terminal / PowerShell and paste the output.** Or just instruct
+  them to install it (with the right command for their `OS_TYPE`) and
+  trust that they did. If they're wrong, the failure surfaces later
+  with a clear error — they'll fix it and retry. That's a *better* UX
+  than you wrongly reporting "X isn't installed" right now.
+
+### What the sandbox CAN do
+
+Cowork's sandbox *can* read and write the user's host filesystem, but
+**only** through folder grants:
+
+- Use `mcp__cowork__request_cowork_directory` to ask for a folder. The
+  user approves; the folder mounts under `/sessions/<id>/mnt/...` in the
+  sandbox.
+- After a grant, Read / Write / Edit / `ls` / `find` against the mount
+  path *do* reach the user's host filesystem. File operations are real.
+- MCP tools registered in Claude Desktop run **natively on the host**,
+  not in the sandbox — that's how the v2 query engine works.
+
+### Mental model
+
+Treat the host as a **black box** you can write files into (via grants)
+but cannot probe. To know anything else about the host — what's
+installed, what version, what's on PATH — **ask the user**.
+
+Yes, this means you'll sometimes ask a question whose answer the user
+finds slightly inconvenient. That's still better than running a
+sandbox check that gives you a false answer and propagating that lie
+into setup decisions.
+
+---
+
 ## What this skill does
 
 1. Names the vault and confirms its location
@@ -96,12 +163,16 @@ Bash tool while in Cowork — stop. Present the command to the user instead
 
 ### Stop deliberating about what's on the user's host — just ask or trust
 
-A frequent failure mode in this SKILL is Claude burning tokens trying to
-figure out (via the sandbox) what's installed on the user's host machine.
-Don't. **The sandbox tells you nothing about the host.** `python3
---version` from Bash inspects the sandbox's Linux Python, not the host's.
-`which gh` from Bash tells you nothing about whether gh is on the host.
-Stop these checks.
+(See the **STOP — sandbox self-awareness** section at the top of this
+file for the full forbidden-commands list. This subsection is the
+operational version.)
+
+A frequent failure mode in this SKILL is Claude burning tokens running
+sandbox checks for tools that may or may not exist on the user's host
+— and then telling the user something false based on the result
+("`gh` isn't installed" when it is — Cowork just checked the wrong
+machine). The sandbox tells you **nothing** about the host. Stop these
+checks before you run them.
 
 Instead, follow these rules:
 
@@ -234,8 +305,21 @@ the user to run `gh repo view` and paste the URL back.
 
 **A2 — Install the GitHub CLI** *(present to the user; do not run from Cowork's Bash)*
 
-Tell the user to run one of these in their **Terminal** (not Claude's Bash
-tool):
+> **Sandbox reminder**: do NOT run `gh --version`, `which gh`, or any
+> other gh check from the Bash tool. The sandbox doesn't have gh and
+> never will — but the user's host does (or doesn't) independently of
+> that. Reporting "gh isn't installed" based on a sandbox check is wrong
+> and will confuse the user. Just ask them.
+
+Ask the user **first**:
+
+> "Do you already have the GitHub CLI (`gh`) installed? Run `gh --version`
+> in your **Terminal** (macOS) or **PowerShell** (Windows) and paste the
+> output. If it errors, I'll walk you through the install."
+
+If the user confirms `gh` is installed, skip the install command below
+and continue to **A3**. Otherwise, tell them to run one of these in their
+**Terminal** (not Claude's Bash tool):
 
 - macOS with Homebrew installed: `brew install gh`
   - If Homebrew isn't installed, point them at [brew.sh](https://brew.sh) for
@@ -243,8 +327,8 @@ tool):
 - Windows: `winget install --id GitHub.cli` (or [cli.github.com](https://cli.github.com))
 - Linux: [cli.github.com/manual/installation](https://cli.github.com/manual/installation)
 
-Ask the user to run `gh --version` in their Terminal and paste the output
-back so you can confirm the install succeeded.
+Ask the user to re-run `gh --version` and paste the output back so you
+can confirm the install succeeded.
 
 **A3 — Authenticate** *(present to the user; do not run from Cowork's Bash)*
 
