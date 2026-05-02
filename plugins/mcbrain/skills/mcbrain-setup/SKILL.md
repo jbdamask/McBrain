@@ -121,6 +121,58 @@ machine. When unsure, ask.
 
 ---
 
+## Step 0: Identify the operating system (macOS or Windows)
+
+**This is the first thing you do.** Setup paths, install commands, and a
+few keyboard shortcuts differ between macOS and Windows. You can't
+reliably detect the user's OS from inside Cowork's Linux sandbox, so:
+
+1. **Try a quick deduction.** Call
+   `mcp__cowork__request_cowork_directory` with `~` (home) and look at
+   the returned path. `/Users/<name>` → macOS. `C:\Users\<name>` or
+   `/c/Users/<name>` → Windows. If the call result clearly identifies
+   the OS, use that.
+2. **Otherwise, ask in one short prompt:**
+
+   > "Quick check before we start: are you on a **Mac** or a **PC**
+   > (Windows)? Setup paths and a couple of commands differ — I'll use
+   > the right ones for your platform."
+
+Store the answer as `OS_TYPE` ∈ {`mac`, `windows`} and use it to pick
+the right paths/commands from the reference table below for every later
+step. **Never run a Mac command on a Windows user, or vice versa.**
+
+### Cross-platform path & command reference
+
+Every Mac-specific path and command in this SKILL has a Windows
+equivalent here. When a later step refers to "App Support / config" or
+"the Python install command", pick the row for the user's `OS_TYPE`.
+
+| Concept | macOS | Windows |
+|---|---|---|
+| User home | `~/` | `%USERPROFILE%\` (e.g. `C:\Users\<name>\`) |
+| Default Documents | `~/Documents/` | `%USERPROFILE%\Documents\` |
+| Claude Desktop config (registers MCPs) | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
+| McBrain engine runtime install dir | `~/Library/Application Support/mcbrain-engine/` | `%LOCALAPPDATA%\mcbrain-engine\` |
+| McBrain vault registry | `~/Library/Application Support/mcbrain/vaults.json` | `%APPDATA%\mcbrain\vaults.json` |
+| Parent directory to grant for engine + Claude config | `~/Library/Application Support/` | grant `%APPDATA%\` AND `%LOCALAPPDATA%\` separately (different parents on Windows) |
+| Hidden-folder reveal in folder picker | Cmd-Shift-. | Already visible; navigate via address bar |
+| Type-a-path shortcut in folder picker | Cmd-Shift-G | Address bar (Ctrl-L in Explorer) |
+| Python install command | `xcode-select --install` (recommended) or python.org | Microsoft Store ("Python 3.12") or python.org installer (check "Add python.exe to PATH") |
+| ripgrep install | `brew install ripgrep` | `winget install BurntSushi.ripgrep.MSVC` (or `scoop install ripgrep`) |
+| GitHub CLI install | `brew install gh` | `winget install --id GitHub.cli` |
+| Venv interpreter inside venv (set automatically by launcher) | `<venv>/bin/python` | `<venv>\Scripts\python.exe` |
+| Engine launcher path (used in MCP `command`) | `~/Library/Application Support/mcbrain-engine/launcher.py` | `%LOCALAPPDATA%\mcbrain-engine\launcher.py` |
+
+**Important Windows note:** the engine runtime lives under `%LOCALAPPDATA%\`
+(per-machine cache) but the Claude Desktop config and registry live under
+`%APPDATA%\` (per-user roaming). On Windows the two are *different
+directories* — you'll need two separate folder grants in Step 5 / 5.6
+rather than one. On macOS, both are under `~/Library/Application Support/`
+so a single grant covers everything.
+
+---
+
 ## Step 1: Name and locate the vault
 
 Ask the user:
@@ -406,24 +458,30 @@ Open [drive.google.com](https://drive.google.com) in a browser and confirm `CLAU
 
 ## Step 5: Configure filesystem MCP in Claude Desktop
 
-The filesystem MCP gives Claude read/write access to the vault. We add it
-by editing Claude Desktop's MCP config file:
+The filesystem MCP gives Claude read/write access to the vault. We add
+it by editing Claude Desktop's MCP config file. Pick the path for the
+user's `OS_TYPE`:
 
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-### Grant Cowork access to `~/Library/Application Support/`
+### Grant Cowork access to the Claude config directory
 
-Call **`mcp__cowork__request_cowork_directory`** with `~/Library/Application Support/`.
-This same grant covers both Step 5 (editing `claude_desktop_config.json`)
-and Step 5.6 (installing the engine runtime under `mcbrain-engine/`) — one
-grant, two steps.
+Call **`mcp__cowork__request_cowork_directory`** with the platform-correct
+parent:
+
+- macOS: `~/Library/Application Support/` (one grant covers both Step 5 and
+  Step 5.6's engine install — same parent dir on Mac)
+- Windows: `%APPDATA%\Claude\` (specific to this step; Step 5.6 will
+  request a separate grant for `%LOCALAPPDATA%\` since they're different
+  parents on Windows)
 
 If `mcp__cowork__request_cowork_directory` is unavailable, fall back to
-telling the user: *"Click + (or 'Add folder') and grant access to
-`~/Library/Application Support/`. The `Library` folder is hidden by default —
-press Cmd-Shift-. in the folder picker to reveal it, or press Cmd-Shift-G
-and type the path."*
+telling the user to click **+** (or 'Add folder') and grant access to
+the platform-correct path above. macOS-only: the `Library` folder is
+hidden by default — press **Cmd-Shift-.** in the folder picker to reveal
+it, or **Cmd-Shift-G** to type the path. Windows: navigate via the
+address bar (Ctrl-L), or paste `%APPDATA%` directly.
 
 Wait for the grant. Verify by listing the granted mount with the Bash tool.
 
@@ -460,30 +518,52 @@ Cowork's Bash; that would write into the sandbox, not the user's Mac.
 
 ## Step 5.5: Confirm Python prerequisite
 
-The query engine needs Python 3.10+ on the user's Mac. **Do not try to
-detect this from the sandbox** — sandbox python ≠ Mac python. Just ask
-once and trust the answer.
+The query engine needs Python 3.10+ on the user's machine. **Do not try
+to detect this from the sandbox** — sandbox python ≠ user's Python.
+Just ask once and trust the answer. The exact prompt depends on
+`OS_TYPE` from Step 0.
 
-Send the user this single prompt:
+### macOS prompt
 
 > "Quick prerequisite check: McBrain's query engine needs **Python 3.10+
-> installed on your Mac**. (This is one-time — every McBrain on this
-> machine reuses the same Python.)
+> installed on your Mac**. (One-time — every McBrain on this machine
+> reuses the same Python.)
 >
-> Run this in your Terminal:
+> Run in **Terminal**:
 >
 > ```
 > python3 --version
 > ```
 >
-> - If it prints `Python 3.10` or higher → reply 'yes', and we'll move on.
-> - If it errors or prints an older version → install with `xcode-select
->   --install` (recommended, gets Python plus dev tools) or download from
->   [python.org/downloads](https://www.python.org/downloads/). Reply when
->   done.
+> - If it prints `Python 3.10` or higher → reply 'yes', we'll move on.
+> - If it errors or prints something older → install with `xcode-select
+>   --install` (recommended, gets Python + dev tools) or download from
+>   [python.org/downloads](https://www.python.org/downloads/). Reply
+>   when done.
 >
-> (`ripgrep` is optional but makes search faster — `brew install ripgrep`
-> if you want it. Setup continues either way.)"
+> (`ripgrep` is optional but makes search faster: `brew install ripgrep`.
+> Setup continues either way.)"
+
+### Windows prompt
+
+> "Quick prerequisite check: McBrain's query engine needs **Python 3.10+
+> installed on your PC**, with `python` on your PATH. (One-time — every
+> McBrain on this machine reuses the same Python.)
+>
+> Run in **PowerShell or Command Prompt**:
+>
+> ```
+> python --version
+> ```
+>
+> - If it prints `Python 3.10` or higher → reply 'yes', we'll move on.
+> - If `python` isn't recognized, or prints something older → easiest
+>   path is **Microsoft Store → search for 'Python 3.12' → Install**
+>   (auto-adds to PATH). Or use the python.org installer and **check
+>   'Add python.exe to PATH' during install**. Reply when done.
+>
+> (`ripgrep` is optional but makes search faster:
+> `winget install BurntSushi.ripgrep.MSVC`. Setup continues either way.)"
 
 Wait for their reply. Trust it. If they're wrong, the launcher will fail
 with a clear stderr message at first MCP call (Step 8.5) and they can
@@ -494,25 +574,35 @@ install Python and retry. Do not run `python3 --version` from Bash to
 
 ## Step 5.6: Install the engine runtime + register the MCP
 
-This is the only step where Cowork needs filesystem access beyond the vault
-itself. Walk the user through granting access, then write files.
+Install the engine source files and add the MCP entry to Claude Desktop's
+config so the engine launches natively next time Claude Desktop starts.
 
 ### What gets installed where
 
-- **Engine runtime files** copied to `~/Library/Application Support/mcbrain-engine/`:
-  `launcher.py`, `mcbrain_engine.py`, `paths.py`, `registry.py`, `schema.sql`,
-  `requirements.txt`. (No venv yet — the launcher creates that on first MCP
-  launch in Step 8.5.)
-- **MCP registration** added to `~/Library/Application Support/Claude/claude_desktop_config.json`
-  under `mcpServers.mcbrain-engine`, pointing at the launcher.
+Pick the right paths for `OS_TYPE`:
 
-### Reuse the `~/Library/Application Support/` grant from Step 5
+- **Engine runtime files** copied to:
+  - macOS: `~/Library/Application Support/mcbrain-engine/`
+  - Windows: `%LOCALAPPDATA%\mcbrain-engine\`
 
-You already asked the user to grant access to `~/Library/Application Support/`
-in Step 5. The same mount works here — no second grant needed. Verify the
-grant is still active by listing the mount with the Bash tool. If the user
-revoked it after Step 5, ask them to re-grant the same folder before
-continuing.
+  Files copied: `launcher.py`, `mcbrain_engine.py`, `paths.py`, `registry.py`,
+  `schema.sql`, `requirements.txt`. (No venv yet — the launcher creates that
+  on first MCP launch in Step 8.5.)
+
+- **MCP registration** added to `mcpServers.mcbrain-engine` in:
+  - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+  - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+### Get the right folder grant
+
+- **macOS**: the `~/Library/Application Support/` grant from Step 5 already
+  covers `mcbrain-engine/` (same parent). Verify the grant is still active
+  by listing the mount; re-grant the same folder if the user revoked it.
+- **Windows**: `%APPDATA%\` (Step 5) and `%LOCALAPPDATA%\` are *different*
+  parents. Call `mcp__cowork__request_cowork_directory` again with
+  `%LOCALAPPDATA%\` so you can write to `%LOCALAPPDATA%\mcbrain-engine\`.
+  (Fallback: ask the user to grant `%LOCALAPPDATA%\` via the + button.)
+  Then verify by listing the new mount.
 
 ### Copy the engine runtime files
 
@@ -532,7 +622,7 @@ files are present at the destination via `ls`.
 
 ### Register the MCP entry
 
-Read `<application-support-mount>/Claude/claude_desktop_config.json`. If the
+Read the platform-correct config file (path from the table above). If the
 file doesn't exist (fresh Claude Desktop install), create a minimal one:
 
 ```json
@@ -541,22 +631,35 @@ file doesn't exist (fresh Claude Desktop install), create a minimal one:
 }
 ```
 
-Merge the following entry into `mcpServers` (preserve any existing servers):
+Merge `mcbrain-engine` into `mcpServers`. **The `command` and `args`
+values are platform-specific — use the matching pair below**:
 
+**macOS:**
 ```json
 "mcbrain-engine": {
   "command": "python3",
   "args": ["/Users/<USER>/Library/Application Support/mcbrain-engine/launcher.py"]
 }
 ```
+Replace `<USER>` with the user's macOS username (ask if you don't know,
+or read from the granted mount path).
 
-Replace `<USER>` with the actual macOS username (read from `$HOME` in Bash, or
-ask). Use `json.dump` semantics — preserve existing entries; only add or
-update `mcbrain-engine`.
+**Windows:**
+```json
+"mcbrain-engine": {
+  "command": "python",
+  "args": ["C:\\Users\\<USER>\\AppData\\Local\\mcbrain-engine\\launcher.py"]
+}
+```
+Replace `<USER>` with the user's Windows username. Note the **double
+backslashes** in the JSON `args` value — that's required JSON escaping;
+`json.dump` handles this automatically when you write a Python string.
+On Windows, prefer `python` over `python3` since `python3` is not always
+on PATH.
 
-If `mcpServers.mcbrain-engine` already exists with a matching `command` +
-`args`, this is a no-op (additional McBrain on this machine reusing the same
-runtime install).
+Use `json.dump` semantics — preserve existing entries; only add or update
+`mcbrain-engine`. If `mcbrain-engine` already exists with matching
+`command` + `args`, it's a no-op.
 
 Show the user the final config block before writing, and confirm.
 
@@ -572,8 +675,15 @@ Show the user the final config block before writing, and confirm.
 
 Tell the user explicitly:
 
-> "I've installed the runtime files and registered the engine. **You need to
-> quit and reopen Claude Desktop now** for the new MCP entry to take effect.
+> "I've installed the runtime files and registered the engine. **You need
+> to quit and reopen Claude Desktop now** for the new MCP entry to take
+> effect.
+>
+> - **macOS**: quit from the menu bar (Claude → Quit Claude, or Cmd-Q) —
+>   closing the window isn't enough.
+> - **Windows**: right-click the Claude icon in the system tray and choose
+>   Exit — closing the window isn't enough.
+>
 > The first time you ask McBrain a question after restarting, the engine
 > will spend ~30 seconds creating its Python virtual environment and
 > downloading the FastEmbed embedding model (~30 MB). After that, every
@@ -724,7 +834,9 @@ and downloads the FastEmbed model. Tell the user:
    older McBrain install), reads `index.db` meta. If the embedding model+dim
    match, the index is preserved and `bin/`/`venv/` directories are removed.
    Otherwise the index is wiped for rebuild.
-3. Writes/updates the vault's entry in `~/Library/Application Support/mcbrain/vaults.json`.
+3. Writes/updates the vault's entry in the platform-resolved registry
+   (`~/Library/Application Support/mcbrain/vaults.json` on macOS,
+   `%APPDATA%\mcbrain\vaults.json` on Windows).
 4. Patches `VAULT_PATH/CLAUDE.md` with the MCP-flavored Query operation and
    the `## Query engine` section (mode marker `lexical+semantic (mcp)`).
 5. Runs an initial `index_sync`. Empty wiki → timestamps the meta table.
