@@ -26,15 +26,17 @@ This SKILL is most often run from **Claude Desktop / Cowork**. Read the next
 section ("How Cowork's environment differs") before doing anything — it
 determines which steps you do yourself and which you ask the user to run.
 
-In short: **file operations** on the user's Mac (create directories, write
-files, edit JSON config) — do them yourself via Read/Write/Edit on granted
-directories. **Commands that run as processes on the user's Mac** (git, gh,
-brew, xcode-select, opening a browser) — present a copy-paste block in a
-fenced code box and ask the user to run it in their Terminal.
+In short: **file operations** on the user's machine (create directories,
+write files, edit JSON config) — do them yourself via Read/Write/Edit on
+granted directories. **Commands that run as processes on the user's
+machine** (git, gh, brew/winget, xcode-select, opening a browser) —
+present a copy-paste block in a fenced code box and ask the user to run
+it in their **Terminal** (macOS) or **PowerShell / Command Prompt**
+(Windows).
 
 Defer to the user only when:
 
-- The step is a Mac-side command that runs as a process (see above)
+- The step is a host-side command that runs as a process (see above)
 - The step is GUI-only (installing Obsidian, clicking through Google Drive
   preferences, installing browser extensions, signing into accounts)
 - The step is an interactive OAuth flow (`gh auth login` browser handoff)
@@ -52,59 +54,62 @@ editor when you can use Write/Edit on a granted directory.
 This is the most common source of confusion when running setup, so be
 explicit:
 
-1. **Cowork's Bash tool runs in a Linux sandbox, NOT on the user's Mac.**
-   Anything you run via the Bash tool — `git`, `gh`, `brew`, `xcode-select`,
-   `python3 -m venv`, `pip install`, etc. — executes inside the sandbox and
-   does NOT affect the user's Mac. Do not try to install dependencies, run
-   git commands, or invoke `gh` from inside the Bash tool when running in
-   Cowork. The user will not see the effect, and you'll create confusion
-   thinking it worked.
+1. **Cowork's Bash tool runs in a Linux sandbox, NOT on the user's host
+   machine** (Mac or Windows). Anything you run via the Bash tool — `git`,
+   `gh`, `brew`, `winget`, `xcode-select`, `python3 -m venv`, `pip install`,
+   etc. — executes inside the sandbox and does NOT affect the host. Do not
+   try to install dependencies, run git commands, or invoke `gh` from
+   inside the Bash tool when running in Cowork. The user will not see the
+   effect, and you'll create confusion thinking it worked.
 
-2. **Cowork CAN read and write files on the user's Mac** through folder
-   grants. When the user clicks the **+** button (or "Add folder") in
-   Cowork and selects a directory, that directory gets mounted into the
+2. **Cowork CAN read and write files on the user's host machine** through
+   folder grants. When the user clicks the **+** button (or "Add folder")
+   in Cowork and selects a directory, that directory gets mounted into the
    sandbox and becomes readable / writable by Cowork's Read / Write / Edit
    tools. You can request access to **any directory on the user's
    filesystem** the user is willing to grant — including system dirs like
-   `~/Library/Application Support/`. Be explicit when asking: tell the user
+   `~/Library/Application Support/` (macOS) or `%APPDATA%\` /
+   `%LOCALAPPDATA%\` (Windows). Be explicit when asking: tell the user
    exactly which folder to select and why.
 
 3. **MCP servers (including the filesystem MCPs Claude Desktop registers)
-   run natively on the user's Mac**, not in the sandbox. They have full Mac
-   filesystem access. That's why the v2 query-engine architecture works:
-   the engine MCP runs natively when Claude Desktop launches it, even
-   though the chat session lives in a sandbox.
+   run natively on the user's host machine**, not in the sandbox. They
+   have full host filesystem access. That's why the v2 query-engine
+   architecture works: the engine MCP runs natively when Claude Desktop
+   launches it, even though the chat session lives in a sandbox.
 
 **Operational rule of thumb:**
 
 | Task | In Cowork |
 |------|-----------|
-| Read / write a file on the Mac | Granted folder + Read/Write/Edit tool — do it yourself |
+| Read / write a file on the host | Granted folder + Read/Write/Edit tool — do it yourself |
 | Edit a JSON config (e.g., `claude_desktop_config.json`) | Granted folder + Edit tool — do it yourself |
-| Run `git`, `gh`, `brew`, `xcode-select`, etc. on the Mac | Present copy-paste block — user runs in Terminal |
+| Run `git`, `gh`, `brew`, `winget`, `xcode-select`, etc. on the host | Present copy-paste block — user runs in their Terminal / PowerShell |
 | Install Python or other system software | Present install command — user runs |
 | Authenticate with a remote service (gh auth, OAuth) | Present command + walk user through the prompts |
 | Open a browser tab or click a UI element | Tell the user; you can't do GUI |
 
 If you find yourself about to run `git init`, `git push`, `gh repo create`,
-`brew install`, or any other Mac-side command via the Bash tool while in
-Cowork — stop. Present the command to the user instead.
+`brew install`, `winget install`, or any other host-side command via the
+Bash tool while in Cowork — stop. Present the command to the user instead
+(in the form for their `OS_TYPE`).
 
-### Stop deliberating about what's on the user's Mac — just ask or trust
+### Stop deliberating about what's on the user's host — just ask or trust
 
 A frequent failure mode in this SKILL is Claude burning tokens trying to
-figure out (via the sandbox) what's installed on the user's Mac. Don't.
-**The sandbox tells you nothing about the Mac.** `python3 --version` from
-Bash inspects the sandbox's Linux Python, not the Mac's. `which gh` from
-Bash tells you nothing about whether gh is on the Mac. Stop these checks.
+figure out (via the sandbox) what's installed on the user's host machine.
+Don't. **The sandbox tells you nothing about the host.** `python3
+--version` from Bash inspects the sandbox's Linux Python, not the host's.
+`which gh` from Bash tells you nothing about whether gh is on the host.
+Stop these checks.
 
 Instead, follow these rules:
 
 - **For prerequisite tools** (Python, gh, ripgrep): ask the user once, in
-  one prompt, with install instructions for what they don't have. Trust
-  their answer. If they're wrong, the failure happens later with a clear
-  error message — they'll fix it and retry.
-- **For directory access on the Mac**: use the Cowork directory-request
+  one prompt with the install command for their `OS_TYPE`, and trust their
+  answer. If they're wrong, the failure happens later with a clear error
+  message — they'll fix it and retry.
+- **For directory access on the host**: use the Cowork directory-request
   tool **`mcp__cowork__request_cowork_directory`**. Pass it the absolute
   path you need (e.g., `~/Documents/` or `~/Library/Application Support/`).
   This is the explicit, documented way to ask for a folder grant — much
@@ -333,9 +338,9 @@ VAULT_PATH/
 
 **Do this via the Write tool against the granted parent mount, not via
 `mkdir`/`touch` in Cowork's Bash sandbox** — the sandbox is Linux and
-doesn't reach the user's Mac filesystem. (You CAN use `mkdir -p` on the
+doesn't reach the user's host filesystem. (You CAN use `mkdir -p` on the
 mount path through the Bash tool — that works because the mount bridges
-to the Mac. But Write tool is simpler for the file creation parts.)
+to the host. But Write tool is simpler for the file creation parts.)
 
 Create placeholder files for index.md, log.md, overview.md, and CLAUDE.md
 using the templates in the reference files below.
@@ -531,7 +536,7 @@ Merge the following entry into `mcpServers` (use the actual `MCP_NAME` and
 
 Show the user the final config before writing it and confirm. Then write
 via Edit tool — do NOT shell out to `cat > config.json` or similar from
-Cowork's Bash; that would write into the sandbox, not the user's Mac.
+Cowork's Bash; that would write into the sandbox, not the user's host.
 
 ---
 
@@ -807,7 +812,8 @@ cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion 
 
 After Step 5.6 the user has restarted Claude Desktop. Now we want to:
 1. Trigger the launcher's one-time bootstrap (creates the venv + downloads
-   the FastEmbed model). This runs natively on the Mac via Claude Desktop.
+   the FastEmbed model). This runs natively on the user's host machine via
+   Claude Desktop.
 2. Call the `mcbrain-engine` MCP's `migrate` tool to register this vault and
    patch its CLAUDE.md.
 

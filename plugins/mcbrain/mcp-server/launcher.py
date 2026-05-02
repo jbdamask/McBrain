@@ -7,10 +7,12 @@ then re-execs into the venv's Python running mcbrain_engine.py — Claude
 sees a single MCP process throughout.
 
 Why a launcher exists at all: setup writes pure files via Cowork's Write
-tool (which bridges to the user's Mac through a granted folder mount), but
-Cowork cannot run `pip install` against the Mac's Python interpreter from
-inside its Linux sandbox. So the venv has to be provisioned the first time
-Claude Desktop natively launches the MCP, which is what this script does.
+tool (which bridges to the user's machine through a granted folder mount),
+but Cowork cannot run `pip install` against the host's Python interpreter
+from inside its Linux sandbox. So the venv has to be provisioned the first
+time Claude Desktop natively launches the MCP, which is what this script
+does. Cross-platform: macOS, Windows, and Linux are all supported — the
+launcher branches on `os.name` for venv interpreter paths.
 """
 
 from __future__ import annotations
@@ -116,11 +118,11 @@ def refuse_if_in_cowork_sandbox() -> None:
     launcher was invoked via Cowork's Bash tool against a mounted path, it
     would create a venv with sandbox-baked shebangs — producing the
     'bad interpreter: /sessions/.../python3: no such file or directory'
-    error when the user later tries to use the venv from a Mac terminal.
+    error when the user later tries to use the venv from a host terminal.
 
     The launcher is only meant to be invoked natively by Claude Desktop /
-    Claude Code on the user's Mac (or Windows, or Linux), not from inside
-    a sandboxed chat session.
+    Claude Code on the user's machine (macOS, Windows, or Linux), not from
+    inside a sandboxed chat session.
     """
     here = str(HERE)
     if here.startswith("/sessions/") or "/mnt/" in here:

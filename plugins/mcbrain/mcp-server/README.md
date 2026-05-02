@@ -5,9 +5,15 @@ per machine, serves every McBrain vault on the box via a `vault` argument.
 
 ## Prerequisite
 
-**Python 3.10+ must be installed on the user's Mac before setup.** The setup
-SKILL detects this. Install via `xcode-select --install` (recommended) or
-[python.org/downloads](https://www.python.org/downloads/).
+**Python 3.10+ must be installed on the user's machine before setup.** The
+setup SKILL asks the user to confirm this. Install per OS:
+
+- **macOS**: `xcode-select --install` (recommended) or
+  [python.org/downloads](https://www.python.org/downloads/).
+- **Windows**: Microsoft Store ("Python 3.12") — auto-adds to PATH — or the
+  python.org installer with "Add python.exe to PATH" checked.
+- **Linux**: distro package (`apt install python3`, `dnf install python3`, etc.)
+  or [python.org/downloads](https://www.python.org/downloads/).
 
 ## Runtime layout
 
