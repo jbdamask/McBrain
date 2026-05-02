@@ -109,7 +109,34 @@ def provision_venv() -> None:
     log("venv ready — handing off to mcbrain_engine")
 
 
+def refuse_if_in_cowork_sandbox() -> None:
+    """Refuse to run if launched from inside Claude Cowork's Linux sandbox.
+
+    Cowork mounts user-granted folders under /sessions/<id>/mnt/. If the
+    launcher was invoked via Cowork's Bash tool against a mounted path, it
+    would create a venv with sandbox-baked shebangs — producing the
+    'bad interpreter: /sessions/.../python3: no such file or directory'
+    error when the user later tries to use the venv from a Mac terminal.
+
+    The launcher is only meant to be invoked natively by Claude Desktop /
+    Claude Code on the user's Mac (or Windows, or Linux), not from inside
+    a sandboxed chat session.
+    """
+    here = str(HERE)
+    if here.startswith("/sessions/") or "/mnt/" in here:
+        log(
+            f"FATAL: launcher invoked from inside Cowork's sandbox ({HERE}). "
+            "This script must be launched natively by Claude Desktop or "
+            "Claude Code, not via Cowork's Bash tool. If you're running "
+            "setup, just register the MCP entry and restart Claude Desktop "
+            "— Claude Desktop will launch the engine natively on first use."
+        )
+        sys.exit(1)
+
+
 def main() -> None:
+    refuse_if_in_cowork_sandbox()
+
     for required in (REQUIREMENTS, ENGINE):
         if not required.is_file():
             log(f"FATAL: missing {required} — runtime install is incomplete")
