@@ -210,9 +210,22 @@ Ask before creating any files — the backup choice affects how the vault is ini
 
 Set up GitHub first — the remote repo needs to exist before the vault is created so you can set it as the origin immediately.
 
-**A1 — Create a GitHub account (if the user doesn't have one)**
+**A1 — Confirm GitHub account and capture the username**
 
-Tell the user: Go to [github.com](https://github.com) and create a free account. Come back when you have a username.
+Ask the user:
+
+> "Do you already have a GitHub account?
+>
+> - If yes, what's your **GitHub username**? (I need it to construct your
+>   repo URL so the rest of setup is hands-off — I won't have to ping you
+>   later to paste anything back.)
+> - If no, go to [github.com](https://github.com), create a free account,
+>   then come back and tell me your username."
+
+Wait for the username. Store it as `GITHUB_USERNAME`. You'll use this
+later to construct `REPO_URL` directly as
+`https://github.com/<GITHUB_USERNAME>/<MCP_NAME>` — no need to wait for
+the user to run `gh repo view` and paste the URL back.
 
 **A2 — Install the GitHub CLI** *(present to the user; do not run from Cowork's Bash)*
 
@@ -247,21 +260,27 @@ Ask the user to confirm authentication succeeded before continuing.
 
 **A4 — Create the private repo on GitHub** *(present to the user)*
 
-Tell the user to run in their Terminal (substituting the actual `MCP_NAME`):
+You already have `GITHUB_USERNAME` and `MCP_NAME`, so construct
+`REPO_URL` yourself:
+
+```
+REPO_URL = https://github.com/<GITHUB_USERNAME>/<MCP_NAME>
+```
+
+Tell the user to run **one** command in their Terminal (substituting the
+actual `MCP_NAME`):
 
 ```bash
 gh repo create MCP_NAME --private
-gh repo view MCP_NAME --json url --jq .url
 ```
 
-The second command prints the repo URL. Ask the user to paste it back.
-Capture it as `REPO_URL` (e.g., `https://github.com/<username>/MCP_NAME`).
-You'll write it into the vault's CLAUDE.md and use it as the remote origin
-when the user initializes the local repo (Step 3, also a user-run step).
+Ask the user to confirm it succeeded (no need to paste anything back —
+you constructed `REPO_URL` already). If they got an "already exists"
+error, that's fine — it just means a repo of that name was created in a
+prior attempt.
 
-Confirm with the user: *"Created private repo at `REPO_URL`. We'll link the
-vault to it in the next step — that one is also a Terminal command you'll
-run yourself."*
+Confirm with the user: *"Created private repo at `REPO_URL`. We'll link
+the vault to it in Step 3 — also a Terminal command you'll run yourself."*
 
 ---
 
