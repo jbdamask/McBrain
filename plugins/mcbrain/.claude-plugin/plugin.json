@@ -1,7 +1,7 @@
 {
   "name": "mcbrain",
-  "version": "1.0.0",
-  "description": "Build and operate McBrain — a persistent, LLM-maintained personal knowledge base based on Karpathy's LLM Wiki pattern. Bundles four cooperating skills: one-shot vault setup, day-to-day vault operations (ingest/query/lint/synth), Notion research-tracker creation (registered back into the vault), and a queue runner that drains research tasks and writes findings back to Notion.",
+  "version": "2.0.0",
+  "description": "Build and operate McBrain — a persistent, LLM-maintained personal knowledge base based on Karpathy's LLM Wiki pattern. Hybrid lexical+semantic search runs through a shared local mcbrain-engine MCP server installed once per machine, so McBrain works in both Claude Code and Claude Cowork (Desktop). Bundles four cooperating skills: one-shot vault setup, day-to-day operations (ingest/query/lint/synth), Notion research-tracker creation, and a queue runner that drains research tasks and writes findings back to Notion.",
   "author": {
     "name": "John Damask"
   },

@@ -96,7 +96,7 @@ Link to related concepts using [[wikilinks]] throughout the text.
 
 ## Operations
 
-**Always sync the search index after any wiki write.** Whenever you create, modify, or delete a file under `wiki/` — whether through a formal ingest, a lint pass that updates `log.md`, an ad-hoc page update, or a synthesis filing — invoke the `mcbrain-ops` skill (`index sync`) afterward so subsequent queries see the change. Cheap (sub-second on no-op). The specific operation procedures below all end with this step explicitly; this paragraph is the catch-all for anything not enumerated.
+**Always sync the search index after any wiki write.** Whenever you create, modify, or delete a file under `wiki/` — whether through a formal ingest, a lint pass that updates `log.md`, an ad-hoc page update, or a synthesis filing — call the `mcbrain-engine` MCP's `index_sync` tool against this vault afterward so subsequent queries see the change. Cheap (sub-second on no-op). The specific operation procedures below all end with this step explicitly; this paragraph is the catch-all for anything not enumerated.
 
 ### Ingest
 
@@ -113,7 +113,7 @@ Use when the user says "ingest" with no Notion context, or names a file already 
 5. Create or update entity and concept pages touched by this source.
 6. Update `wiki/index.md` with the new page(s).
 7. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest | [source title]`.
-8. Invoke the `mcbrain-ops` skill (`index sync`) so the new wiki page(s) are searchable immediately. Cheap (sub-second on no-op).
+8. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately. Cheap (sub-second on no-op).
 
 A single source may touch 5-15 wiki pages. That's normal.
 
@@ -143,11 +143,11 @@ Use when the user has just finished a `notion-research-runner` pass, or referenc
 4. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/<slug>.md` files. Cite them in wiki pages exactly the same way you'd cite any other raw source.
 5. **Close the loop in Notion.** After the wiki write succeeds, flip the Notion task's Status to `Done`. If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
 6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
-7. Invoke the `mcbrain-ops` skill (`index sync`) so the new wiki page(s) are searchable immediately.
+7. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately.
 
 ### Query
 When asked a question against the wiki:
-1. Invoke the `mcbrain-ops` skill (`query "<text>"`). It returns a ranked list of wiki page paths + scores as JSON, fused from lexical (ripgrep) and semantic (FastEmbed) search via Reciprocal Rank Fusion.
+1. Call the `mcbrain-engine` MCP's `query` tool with `vault=<this vault's name>` (or `vault_path` as fallback) and `text=<question>`. It returns a ranked list of wiki page paths + scores as JSON, fused from lexical (ripgrep) and semantic (FastEmbed) search via Reciprocal Rank Fusion.
 2. Read the top 5–8 pages from that list.
 3. Synthesize an answer with `[[wikilinks]]` citations.
 4. Offer to file the answer as a new wiki page if it's worth keeping.
@@ -224,14 +224,14 @@ Files touched: wiki/page1.md, wiki/page2.md
 
 ## Query engine
 
-- mode: lexical+semantic
+- mode: lexical+semantic (mcp)
 - embedding_model: BAAI/bge-small-en-v1.5
 - embedding_dim: 384
 - index_path: .mcbrain/index.db
 
-The query engine is hybrid: lexical (ripgrep / grep / pure-Python fallback) plus semantic (FastEmbed for embeddings, brute-force cosine via numpy over a SQLite-stored embedding column). Results from the two modalities are fused via Reciprocal Rank Fusion. The per-vault index lives at `.mcbrain/index.db` and is provisioned and maintained by the `mcbrain-ops` skill. Re-index with `mcbrain-ops index rebuild` if the schema or model ever changes.
+The query engine is a global stdio MCP server (`mcbrain-engine`) shared by every McBrain on this machine. It runs hybrid lexical (ripgrep / grep / pure-Python fallback) plus semantic (FastEmbed, brute-force cosine via numpy over a SQLite embedding column) search, fused via Reciprocal Rank Fusion. The per-vault index lives at `.mcbrain/index.db`. Use the `mcbrain-engine` MCP's tools (`query`, `index_sync`, `index_rebuild`, `index_status`, `migrate`, `uninstall`, `list_vaults`) to interact with it.
 
-If this section is missing on an older vault, the `mcbrain` skill detects it on next invocation and offers to migrate the vault by running `mcbrain-ops migrate`.
+If this section is missing or still uses the legacy `mode: lexical+semantic` marker (no `(mcp)` suffix), the `mcbrain` skill detects it on next invocation and offers to upgrade by calling the `mcbrain-engine` MCP's `migrate` tool.
 
 ## Notion companion databases
 
