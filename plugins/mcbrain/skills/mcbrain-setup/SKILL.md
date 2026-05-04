@@ -1082,11 +1082,120 @@ If the section already exists (e.g., the `notion-research-db` skill wrote it dur
 
 This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in `wiki/notion-databases.md`; the ingest procedure falls back to that path if the CLAUDE.md section is empty, so both work.
 
-**8f — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
+**8f — Install the Notion integration token (user runs this in Terminal — token NEVER passes through chat).**
+
+> ⛔ **Security rule for this sub-step.** A Notion integration token is a
+> bearer credential — equivalent to a password. **Do not** ask the user
+> to paste it into chat, do not echo it, do not store it as a setup
+> variable, do not write it via the Write tool. Anything pasted into
+> chat is sent to Anthropic's servers and lives in the user's
+> conversation log. The right pattern: the user writes the token to a
+> file themselves in their own Terminal / PowerShell, the SKILL only
+> verifies the file is in place. The SKILL never sees the token.
+
+The `mcbrain-engine` MCP's server-side ingest tool (`ingest_from_notion`)
+calls Notion's REST API directly from the user's host — page bodies go
+straight to disk without passing through the LLM context. That requires
+a Notion integration token, which is *separate* from the Claude-Notion
+connector the user may already have configured.
+
+**Skip this sub-step entirely if a token file already exists** at the
+platform-resolved path below — the engine reuses one token for every
+Notion-enabled vault on the machine. Check by listing the directory
+through the granted mount:
+
+- macOS: `<application-support-mount>/mcbrain/notion-token`
+- Windows: `<appdata-mount>/mcbrain/notion-token`
+
+If you see `notion-token` in the listing, skip to step **8g**.
+
+If the file is absent, present this script to the user **as a copy-paste
+block** (don't run it from Cowork's Bash — it touches the host
+filesystem and reads from the host clipboard / TTY):
+
+> "I need a Notion **integration token** to copy your Notion pages
+> directly into McBrain — without sending them through me first.
+> Important: I should NOT see this token. You'll paste it into your
+> own Terminal where it stays on your machine.
+>
+> **One-time setup (about 90 seconds):**
+>
+> 1. Open <https://www.notion.so/my-integrations> in your browser
+> 2. Click **+ New integration** → name it `mcbrain` → workspace =
+>    your workspace → **Submit**
+> 3. On the integration's page, copy the **Internal Integration Secret**
+>    (starts with `secret_…` or `ntn_…`) to your clipboard
+> 4. Open your `<NOTION_DB_NAME>` Notion database → click the **`…`**
+>    menu top-right → **Connections** → **Add connections** → pick
+>    `mcbrain`. (Without this step the integration can't read the DB.)
+> 5. Run **one** of the blocks below in your Terminal / PowerShell.
+>    The token never appears on screen and never enters this chat."
+
+For **macOS / Linux** (Terminal), paste-from-clipboard variant — assumes
+the user copied the token to clipboard in step 3:
+
+```bash
+mkdir -p ~/Library/Application\ Support/mcbrain && \
+pbpaste > ~/Library/Application\ Support/mcbrain/notion-token && \
+chmod 600 ~/Library/Application\ Support/mcbrain/notion-token && \
+echo "token saved"
+```
+
+(On Linux, swap `pbpaste` for `xclip -selection clipboard -o` or
+`wl-paste`, and the path for `~/.config/mcbrain/notion-token`.)
+
+If the user prefers not to use the clipboard, the type-it-in variant —
+token is hidden because of `read -s`:
+
+```bash
+mkdir -p ~/Library/Application\ Support/mcbrain && \
+read -s -p "Paste token, press enter: " TOK && \
+printf '%s' "$TOK" > ~/Library/Application\ Support/mcbrain/notion-token && \
+unset TOK && \
+chmod 600 ~/Library/Application\ Support/mcbrain/notion-token && \
+echo "token saved"
+```
+
+For **Windows** (PowerShell):
+
+```powershell
+$dir = "$env:APPDATA\mcbrain"
+New-Item -ItemType Directory -Path $dir -Force | Out-Null
+$tok = Read-Host -AsSecureString "Paste token, press enter"
+$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tok))
+[IO.File]::WriteAllText("$dir\notion-token", $plain)
+Remove-Variable tok, plain
+"token saved"
+```
+
+After the user reports back ("token saved" or any confirmation), verify
+the file exists — but DO NOT read its contents:
+
+- Bash against the mount: `test -f <application-support-mount>/mcbrain/notion-token && echo present || echo missing`
+- Or just `ls -la <application-support-mount>/mcbrain/` and confirm `notion-token` is in the listing
+
+If the file is missing, ask the user to re-run the block from above. If
+present, continue to 8g — you're done with the token.
+
+**Never read the file's contents.** The engine reads it on demand at
+the path; you don't need to. If the user pastes the token by mistake,
+acknowledge that it's now in the conversation log and recommend they
+**rotate the token** (delete the integration at notion.so/my-integrations
+and create a new one) before continuing.
+
+**8g — Register in CLAUDE.md (continued from 8e).** Already done above.
+
+**8h — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
 
 ```bash
 cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push
 ```
+
+(The Notion token file is *not* in the vault and *not* in git — it
+lives under `~/Library/Application Support/mcbrain/` on macOS and
+`%APPDATA%\mcbrain\` on Windows, both per-machine config locations
+outside any vault.)
 
 ---
 
@@ -1150,6 +1259,34 @@ and downloads the FastEmbed model. Tell the user:
 
 Surface the JSON output. The `legacy_layout_removed`, `rebuilt_for_mismatch`,
 and `claude_md_patched` flags make it visible what migrate actually did.
+
+### Enable Notion ingest (only if NOTION_DB_INTENT was yes-create or yes-existing)
+
+If Step 8b captured a Notion intent and Step 8f wrote a token, register
+this vault as Notion-enabled in the engine registry. Call the
+`mcbrain-engine` MCP's `enable_notion_for_vault` tool with:
+
+- `vault` = `MCP_NAME` (e.g. `mcbrain-ai-science`)
+- `database_id` = `NOTION_DB_ID` (captured in 8c or returned by 8d)
+
+Surface the JSON output. The returned `notion_enabled: true` and
+`notion_db_id` confirm the registry has been updated. From now on the
+user can ask Claude things like *"ingest the latest Notion pages into
+McBrain"* and the LLM will route that to `ingest_from_notion(vault=…)`,
+which copies pages directly to `<vault>/raw/notes/` without sending
+content through the chat context.
+
+If `enable_notion_for_vault` errors with *"vault is not registered"*,
+that means the migrate call above failed — fix migrate first.
+
+If it errors with *"Notion integration token not found"*, that means
+Step 8f's token write didn't land where expected. Re-check the path
+(macOS: `~/Library/Application Support/mcbrain/notion-token`,
+Windows: `%APPDATA%\mcbrain\notion-token`) and retry.
+
+If `NOTION_DB_INTENT` was `no` (skip), don't call this — the vault
+stays without Notion config, and `ingest_from_notion` will refuse to
+run against it (which is what we want).
 
 ### Recovery from first-launch timeout
 

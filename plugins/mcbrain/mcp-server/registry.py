@@ -1,7 +1,21 @@
 """Vault registry I/O — atomic-rename writes to platform-resolved vaults.json.
 
 Schema:
-    {"version": 1, "vaults": {"<name>": {"path": "<abs>", "registered": "<UTC ISO>"}}}
+    {
+      "version": 1,
+      "vaults": {
+        "<name>": {
+          "path": "<abs>",
+          "registered": "<UTC ISO>",
+          "notion_enabled": true,           # optional, present if vault opts in
+          "notion_db_id": "<32-char hex>",  # optional, paired with notion_enabled
+        }
+      }
+    }
+
+Older entries without the notion_* keys are valid — read_registry() does not
+require them. The Notion ingest tool checks for `notion_enabled is True`
+before doing any work.
 """
 
 from __future__ import annotations
@@ -55,14 +69,54 @@ def write_registry(data: dict) -> None:
 
 
 def put_vault(name: str, vault_path: Path) -> dict:
-    """Insert or update a vault entry idempotently. Returns the resulting registry."""
+    """Insert or update a vault entry idempotently. Preserves any existing
+    Notion config on the entry. Returns the resulting registry."""
     data = read_registry()
-    data["vaults"][name] = {
+    existing = data["vaults"].get(name, {})
+    entry = {
         "path": str(Path(vault_path).expanduser().resolve()),
         "registered": _iso_now(),
     }
+    # Carry over Notion config if previously set — re-registration must not
+    # silently un-enable Notion ingest for a vault.
+    for key in ("notion_enabled", "notion_db_id"):
+        if key in existing:
+            entry[key] = existing[key]
+    data["vaults"][name] = entry
     write_registry(data)
     return data
+
+
+def set_notion_config(name: str, db_id: str | None) -> dict:
+    """Enable or disable Notion ingest on the named vault.
+
+    Pass `db_id=None` to clear (sets notion_enabled=False, drops notion_db_id).
+    Pass a 32-char hex (with or without dashes) to enable.
+    Raises KeyError if the vault is not registered.
+    """
+    data = read_registry()
+    if name not in data["vaults"]:
+        raise KeyError(f"vault {name!r} is not registered")
+    entry = data["vaults"][name]
+    if db_id is None:
+        entry["notion_enabled"] = False
+        entry.pop("notion_db_id", None)
+    else:
+        entry["notion_enabled"] = True
+        entry["notion_db_id"] = _normalize_db_id(db_id)
+    write_registry(data)
+    return data
+
+
+def _normalize_db_id(db_id: str) -> str:
+    """Normalize a Notion DB ID to dashed canonical form (32 hex with 4 dashes)."""
+    raw = db_id.strip().replace("-", "").lower()
+    if len(raw) != 32 or any(c not in "0123456789abcdef" for c in raw):
+        raise ValueError(
+            f"invalid Notion database id {db_id!r}: expected 32 hex chars "
+            "(with or without dashes)"
+        )
+    return f"{raw[0:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:32]}"
 
 
 def remove_vault(name: str) -> bool:

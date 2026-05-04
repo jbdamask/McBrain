@@ -87,3 +87,8 @@ def claude_desktop_config_path() -> Path:
 def claude_code_config_dir() -> Path:
     """Claude Code user-scope config dir — ~/.claude on every OS."""
     return Path.home() / ".claude"
+
+
+def notion_token_path() -> Path:
+    """Notion integration token — sibling of vaults.json under user config."""
+    return registry_path().parent / "notion-token"

@@ -37,10 +37,10 @@ Pass the canonical name (or the absolute path as fallback) to the tool.
 
 ## Tool calls
 
-The `mcbrain-engine` MCP exposes five maintenance tools handled here. The
-sixth tool, `query`, is called from the `mcbrain` skill via CLAUDE.md — **not
-from this skill** — because it's part of the user's question-answering flow,
-not maintenance.
+The `mcbrain-engine` MCP exposes eight maintenance tools handled here. The
+ninth tool, `query`, is called from the `mcbrain` skill via CLAUDE.md —
+**not from this skill** — because it's part of the user's question-answering
+flow, not maintenance.
 
 ### `index_sync(vault)`
 
@@ -87,6 +87,61 @@ Removes `<vault>/.mcbrain/` (the per-vault index) and the vault's registry
 entry. Dry-run unless `force=true`. Never touches `wiki/` or `raw/`. The
 shared FastEmbed cache (managed by FastEmbed itself) is intentionally left
 in place so other vaults don't redownload the model.
+
+### `enable_notion_for_vault(vault, database_id)`
+
+Marks a registered vault as Notion-enabled and records the database id to
+drain. Required before `ingest_from_notion` will run against the vault.
+Idempotent — re-running with the same id is a no-op. Vault must already
+be registered (`migrate` first). Returns `{vault_name, vault_path,
+notion_enabled, notion_db_id}`.
+
+The token itself is *not* set by this tool — it lives in a per-machine
+file at `~/Library/Application Support/mcbrain/notion-token` (macOS) or
+`%APPDATA%\mcbrain\notion-token` (Windows). `mcbrain-setup` Step 8f
+captures it on first run; subsequent vaults reuse it.
+
+### `disable_notion_for_vault(vault)`
+
+Clears the registry's Notion config on a vault. The integration token
+file and any already-imported markdown under `<vault>/raw/notes/` are
+left in place — only the registry flag is reset. Use when the user
+stops wanting Notion ingest for a specific vault but keeps it for others.
+
+### `ingest_from_notion(vault, database_id?, page_ids?, filter?)`
+
+**This is the high-leverage tool.** Calls the Notion REST API directly
+from the user's host (not via Claude's Notion connector), converts each
+page's blocks to markdown, and writes the files to `<vault>/raw/notes/`.
+**Page bodies do not pass through the LLM context** — only summary
+counts come back. That's a major token-cost and latency win for bulk
+ingest of 10+ pages.
+
+Refuses to run if the vault isn't Notion-enabled (call
+`enable_notion_for_vault` first). Refuses if the integration token file
+is missing.
+
+Arguments:
+- `vault` — registry name or absolute path (required)
+- `database_id` — optional override; default uses the vault's registered
+  `notion_db_id`
+- `page_ids` — optional list of specific page IDs; if omitted, drains
+  the database
+- `filter` — optional Notion DB filter object
+
+Idempotent: pages whose `last_edited_time` matches the local file's
+frontmatter are skipped, so re-running is cheap and safe.
+
+Returns `{vault_name, vault_path, database_id, imported_count,
+imported_files, skipped_count, skipped_files, errors}`. Surface the
+counts and any errors to the user. Each imported file lands at
+`<vault>/raw/notes/<slug>-<short_id>.md` with frontmatter recording
+`notion_id`, `notion_url`, `last_edited_time`, and `imported_at` so
+re-runs can detect changes.
+
+**After `ingest_from_notion` writes files, run `index_sync` to fold the
+new raw notes into the vault's search index** — the catch-all
+"sync after writes" rule applies.
 
 ## When the engine MCP isn't reachable
 
