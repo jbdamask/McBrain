@@ -1082,11 +1082,65 @@ If the section already exists (e.g., the `notion-research-db` skill wrote it dur
 
 This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in `wiki/notion-databases.md`; the ingest procedure falls back to that path if the CLAUDE.md section is empty, so both work.
 
-**8f — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
+**8f — Capture the Notion integration token (one-time per machine).**
+
+The `mcbrain-engine` MCP's server-side ingest tool (`ingest_from_notion`)
+calls Notion's REST API directly from the user's host — page bodies go
+straight to disk without passing through the LLM context. That requires
+a Notion integration token, which is *separate* from the Claude-Notion
+connector the user may already have configured.
+
+**Skip this sub-step entirely if a token already exists** at the
+platform-resolved path below — the engine reuses one token for every
+Notion-enabled vault on the machine. To check, list the directory and
+look for `notion-token`:
+
+- macOS: `~/Library/Application Support/mcbrain/notion-token`
+- Windows: `%APPDATA%\mcbrain\notion-token`
+
+If the file is absent, walk the user through this:
+
+> "To copy your Notion pages directly to McBrain without sending their
+> contents through me first (faster, and your context window doesn't
+> fill up), I need a Notion **integration token**. One-time setup:
+>
+> 1. Open <https://www.notion.so/my-integrations> in your browser
+> 2. Click **+ New integration** → name it `mcbrain` → workspace =
+>    your workspace → submit
+> 3. On the integration's page, copy the **Internal Integration Secret**
+>    (starts with `secret_…` or `ntn_…`)
+> 4. Open your `<NOTION_DB_NAME>` Notion database → click the **`...`**
+>    menu top-right → **Connections** → **Add connections** → pick
+>    `mcbrain`. (Without this step the integration can't read the DB.)
+> 5. Paste the token here."
+
+When the user pastes the token, **write it to disk yourself** using the
+Write tool against the granted Application Support / `%APPDATA%\` mount
+(the same one already granted in Step 5 / 5.6 for the engine install):
+
+- macOS: `<application-support-mount>/mcbrain/notion-token`
+- Windows: `<appdata-mount>/mcbrain/notion-token`
+
+Single line, no surrounding quotes, no trailing newline beyond the
+token itself. **Do NOT echo the token back to the user in chat after
+they paste it** — treat it like a password. After writing, confirm only
+that "the token is saved at `<path>`."
+
+If the `mcbrain/` parent directory doesn't exist yet (first
+Notion-enabled vault on this machine), `mkdir -p` against the mount
+first — that's safe Bash usage per the FUSE-flush rule (mkdir is fine).
+
+**8g — Register in CLAUDE.md (continued from 8e).** Already done.
+
+**8h — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
 
 ```bash
 cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push
 ```
+
+(The Notion token file is *not* in the vault and *not* in git — it
+lives under `~/Library/Application Support/mcbrain/` on macOS and
+`%APPDATA%\mcbrain\` on Windows, both per-machine config locations.)
 
 ---
 
@@ -1150,6 +1204,34 @@ and downloads the FastEmbed model. Tell the user:
 
 Surface the JSON output. The `legacy_layout_removed`, `rebuilt_for_mismatch`,
 and `claude_md_patched` flags make it visible what migrate actually did.
+
+### Enable Notion ingest (only if NOTION_DB_INTENT was yes-create or yes-existing)
+
+If Step 8b captured a Notion intent and Step 8f wrote a token, register
+this vault as Notion-enabled in the engine registry. Call the
+`mcbrain-engine` MCP's `enable_notion_for_vault` tool with:
+
+- `vault` = `MCP_NAME` (e.g. `mcbrain-ai-science`)
+- `database_id` = `NOTION_DB_ID` (captured in 8c or returned by 8d)
+
+Surface the JSON output. The returned `notion_enabled: true` and
+`notion_db_id` confirm the registry has been updated. From now on the
+user can ask Claude things like *"ingest the latest Notion pages into
+McBrain"* and the LLM will route that to `ingest_from_notion(vault=…)`,
+which copies pages directly to `<vault>/raw/notes/` without sending
+content through the chat context.
+
+If `enable_notion_for_vault` errors with *"vault is not registered"*,
+that means the migrate call above failed — fix migrate first.
+
+If it errors with *"Notion integration token not found"*, that means
+Step 8f's token write didn't land where expected. Re-check the path
+(macOS: `~/Library/Application Support/mcbrain/notion-token`,
+Windows: `%APPDATA%\mcbrain\notion-token`) and retry.
+
+If `NOTION_DB_INTENT` was `no` (skip), don't call this — the vault
+stays without Notion config, and `ingest_from_notion` will refuse to
+run against it (which is what we want).
 
 ### Recovery from first-launch timeout
 

@@ -1006,6 +1006,156 @@ def read_registry_safe() -> dict:
         return {}
 
 
+# ----------------------------- Notion ingest --------------------------------
+
+
+def _vault_notion_config(name: str) -> dict:
+    """Return the Notion config for a vault. Raises EngineError if not enabled."""
+    import registry
+
+    entry = registry.find_vault_by_name(name)
+    if not entry:
+        raise EngineError(f"vault {name!r} is not registered")
+    if not entry.get("notion_enabled"):
+        raise EngineError(
+            f"Vault {name!r} is not configured for Notion ingest. "
+            "Run mcbrain-setup Step 8 to enable it, or call "
+            "enable_notion_for_vault(vault, database_id) first."
+        )
+    db_id = entry.get("notion_db_id")
+    if not db_id:
+        raise EngineError(
+            f"Vault {name!r} is marked notion_enabled but has no "
+            "notion_db_id — registry corruption. Re-run setup Step 8."
+        )
+    return {"db_id": db_id, "vault_path": Path(entry["path"])}
+
+
+def enable_notion_for_vault_impl(vault: Path, name: str, db_id: str) -> dict:
+    """Mark a registered vault as Notion-enabled with the given database id."""
+    import registry
+
+    if name == UNREGISTERED:
+        raise EngineError(
+            f"vault at {vault} is not registered — call migrate first"
+        )
+    try:
+        registry.set_notion_config(name, db_id)
+    except (KeyError, ValueError) as e:
+        raise EngineError(str(e)) from e
+    return {
+        "vault_name": name,
+        "vault_path": str(vault),
+        "notion_enabled": True,
+        "notion_db_id": registry.find_vault_by_name(name)["notion_db_id"],
+    }
+
+
+def disable_notion_for_vault_impl(vault: Path, name: str) -> dict:
+    import registry
+
+    if name == UNREGISTERED:
+        raise EngineError(
+            f"vault at {vault} is not registered — nothing to disable"
+        )
+    try:
+        registry.set_notion_config(name, None)
+    except KeyError as e:
+        raise EngineError(str(e)) from e
+    return {"vault_name": name, "vault_path": str(vault), "notion_enabled": False}
+
+
+def ingest_from_notion_impl(
+    vault: Path,
+    name: str,
+    database_id: str | None = None,
+    page_ids: list[str] | None = None,
+    filter_: dict | None = None,
+) -> dict:
+    """Server-side Notion → vault/raw/notes ingest.
+
+    Refuses if the vault hasn't been Notion-enabled. Drains the configured
+    database (or the explicit `database_id` override / explicit `page_ids`),
+    converts each page's blocks to markdown, and writes them under
+    `<vault>/raw/notes/`. Idempotent: pages whose `last_edited_time` is older
+    than the local file's frontmatter are skipped.
+
+    Returns: {imported_files, imported_count, skipped_count, errors}
+    """
+    import notion
+
+    cfg = _vault_notion_config(name)
+    db_to_drain = database_id or cfg["db_id"]
+
+    raw_notes = vault / "raw" / "notes"
+    raw_notes.mkdir(parents=True, exist_ok=True)
+
+    # Resolve the page set: explicit page_ids > database query.
+    if page_ids:
+        pages = [notion.get_page(pid) for pid in page_ids]
+    else:
+        pages = notion.query_database(db_to_drain, filter_)
+
+    imported: list[str] = []
+    skipped: list[str] = []
+    errors: list[dict] = []
+
+    for page in pages:
+        page_id = page.get("id", "<unknown>")
+        last_edited = page.get("last_edited_time", "")
+        try:
+            # Idempotency: peek at any existing file with this notion_id by
+            # scanning the dir's frontmatter. Cheap because raw/notes/ is small.
+            existing = _find_local_by_notion_id(raw_notes, page_id)
+            if existing is not None:
+                fm = notion.read_frontmatter(existing)
+                if fm.get("last_edited_time") == last_edited and last_edited:
+                    skipped.append(existing.name)
+                    continue
+
+            blocks = notion.get_blocks(page_id)
+            filename, body = notion.page_to_markdown(page, blocks)
+
+            # If we found an existing file but the title changed (different
+            # slug), keep the old filename so cross-references stay stable.
+            if existing is not None and existing.name != filename:
+                filename = existing.name
+
+            target = raw_notes / filename
+            target.write_text(body, encoding="utf-8")
+            imported.append(filename)
+        except notion.NotionError as e:
+            errors.append({"page_id": page_id, "error": str(e)})
+        except Exception as e:  # noqa: BLE001 — surface anything else with context
+            errors.append(
+                {"page_id": page_id, "error": f"{type(e).__name__}: {e}"}
+            )
+
+    return {
+        "vault_name": name,
+        "vault_path": str(vault),
+        "database_id": db_to_drain,
+        "imported_count": len(imported),
+        "imported_files": imported,
+        "skipped_count": len(skipped),
+        "skipped_files": skipped,
+        "errors": errors,
+    }
+
+
+def _find_local_by_notion_id(raw_notes: Path, notion_id: str) -> Path | None:
+    """Scan raw/notes/ for a markdown file whose frontmatter matches notion_id."""
+    import notion
+
+    if not raw_notes.is_dir():
+        return None
+    for md in raw_notes.glob("*.md"):
+        fm = notion.read_frontmatter(md)
+        if fm.get("notion_id") == notion_id:
+            return md
+    return None
+
+
 # ---------------------------- MCP wire layer --------------------------------
 
 
@@ -1064,6 +1214,52 @@ if FastMCP is not None:
         """Return every registered vault and its provisioned status."""
         return list_vaults_impl()
 
+    @mcp.tool()
+    def enable_notion_for_vault(vault: str, database_id: str) -> dict:
+        """Enable Notion ingest for a vault, with the database to drain.
+
+        Records `notion_enabled=True` and the canonicalized `notion_db_id`
+        in the vault registry. The vault must already be registered (call
+        `migrate` first). Idempotent — re-running with the same id is a no-op.
+        """
+        name, path = resolve_vault(vault)
+        require_registered(name, path)
+        return enable_notion_for_vault_impl(path, name, database_id)
+
+    @mcp.tool()
+    def disable_notion_for_vault(vault: str) -> dict:
+        """Clear a vault's Notion configuration. The integration token and
+        the local raw/notes/ files are left in place; only the registry flag
+        is reset."""
+        name, path = resolve_vault(vault)
+        require_registered(name, path)
+        return disable_notion_for_vault_impl(path, name)
+
+    @mcp.tool()
+    def ingest_from_notion(
+        vault: str,
+        database_id: str | None = None,
+        page_ids: list[str] | None = None,
+        filter: dict | None = None,
+    ) -> dict:
+        """Server-side ingest from a Notion database into <vault>/raw/notes/.
+
+        Refuses if the vault hasn't been Notion-enabled (run
+        `enable_notion_for_vault` first, or do it via mcbrain-setup Step 8).
+        The page bodies are written directly to disk — they do NOT pass
+        through the LLM context. Returns only summary counts + filenames.
+
+        Idempotent: pages whose `last_edited_time` matches the local
+        frontmatter are skipped. If `database_id` is omitted, the vault's
+        registered Notion DB is used. If `page_ids` is given, only those
+        pages are fetched; otherwise the database is drained.
+        """
+        name, path = resolve_vault(vault)
+        require_registered(name, path)
+        return ingest_from_notion_impl(
+            path, name, database_id=database_id, page_ids=page_ids, filter_=filter
+        )
+
 
 TOOL_NAMES = (
     "query",
@@ -1073,6 +1269,9 @@ TOOL_NAMES = (
     "migrate",
     "uninstall",
     "list_vaults",
+    "enable_notion_for_vault",
+    "disable_notion_for_vault",
+    "ingest_from_notion",
 )
 
 
