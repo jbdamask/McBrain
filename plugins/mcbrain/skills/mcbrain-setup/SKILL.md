@@ -1024,7 +1024,7 @@ If Claude can read `CLAUDE.md`, the MCP is working. If not, troubleshoot:
 
 McBrain pairs nicely with a Notion research tracker: a database where the user queues research questions, the `notion-research-runner` skill drains the queue with parallel subagents and writes findings back to each task page, and then the Notion-bridged ingest mode (documented in CLAUDE.md) pulls those findings into `raw/notes/` and onward into the wiki. This step wires up that pairing at setup time so it's already configured the first time the user wants to use it.
 
-This step is **optional**. Skip cleanly if the user doesn't use Notion or doesn't want a tracker right now.
+**The whole step is optional, but its sub-steps are not.** If the user picks "Skip for now" in 8b, jump to Step 9 — done. **If the user picks "Use existing database" or "Create a new one" in 8b, you MUST execute every sub-step from 8c through 8f (and 8g if backup strategy is git) in order before continuing to Step 8.5.** In particular, **8f (the Notion integration token install) is required for the engine's `ingest_from_notion` tool to work** — skipping it leaves the user with the LLM-mediated fallback (every page body streamed through chat), which defeats the point of opting into Notion. Do not skip 8f because it looks long or because the user "already configured" Notion in chat — what matters is whether the token file is on disk.
 
 **8a — Check for a Notion MCP connector.** Enumerate available tools and look for ones that perform Notion operations. Match by *capability*, not exact name — many connectors exist (Anthropic's claude.ai Notion connector, Notion's official `@notionhq/notion-mcp-server`, community servers). The capabilities needed here are *search*, *create-database*, and *retrieve-database*; tool names typically contain `notion`, `search`, `database`, or fragments like `API-post-search` / `API-post-database`.
 
@@ -1082,8 +1082,16 @@ If the section already exists (e.g., the `notion-research-db` skill wrote it dur
 
 This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in `wiki/notion-databases.md`; the ingest procedure falls back to that path if the CLAUDE.md section is empty, so both work.
 
-**8f — Install the Notion integration token (user runs this in Terminal — token NEVER passes through chat).**
+**8f — Install the Notion integration token (REQUIRED if NOTION_DB_INTENT was yes-*).**
 
+> 🔴 **Do not skip this sub-step.** If the user opted into Notion in 8b
+> (yes-existing or yes-create), the engine's `ingest_from_notion` tool
+> needs a Notion integration token sitting in a file on the host. No
+> token = no server-side ingest = every page body streams through chat
+> on every future ingest. Skipping 8f means the user's "I want Notion"
+> answer in 8b is half-applied — they get the CLAUDE.md registration
+> (8e) but not the working ingest path. Always run 8f for these users.
+>
 > ⛔ **Security rule for this sub-step.** A Notion integration token is a
 > bearer credential — equivalent to a password. **Do not** ask the user
 > to paste it into chat, do not echo it, do not store it as a setup
@@ -1184,9 +1192,7 @@ acknowledge that it's now in the conversation log and recommend they
 **rotate the token** (delete the integration at notion.so/my-integrations
 and create a new one) before continuing.
 
-**8g — Register in CLAUDE.md (continued from 8e).** Already done above.
-
-**8h — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
+**8g — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
 
 ```bash
 cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push
