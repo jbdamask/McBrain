@@ -123,27 +123,40 @@ Use when the user has just finished a `notion-research-runner` pass, or referenc
 
 **Hard rule: do not re-research.** Do not spawn research subagents, do not call `notion-research-runner`, do not run web search for the topic. The research is already done — your job is to file it, not redo it.
 
-1. **Find the companion DB.** Look in this CLAUDE.md's `## Notion companion databases` section first — that's the canonical registry, populated by `mcbrain-setup` (Step 8) and by `notion-research-db`. If that section is missing or empty, fall back to `wiki/notion-databases.md` (the legacy location used by older vaults). Capture the database URL / ID. If multiple trackers are registered for this vault, ask the user which one.
-2. **Pull completed task pages.** Query the tracker for rows with Status `In progress` whose page body contains a research run (look for the `## Summary` / `## Key Findings` / `## Sources` section headings the runner writes). If the user named specific tasks, use those instead. Skip rows whose Notion page ID already appears in the `sources:` frontmatter of any wiki page — those have already been ingested.
-3. **Copy to `raw/notes/` verbatim.** For each task, write the page body to `raw/notes/<slug>.md` (slug = lowercased, hyphenated task title). Prepend YAML frontmatter capturing provenance:
+**Hard rule: do not pull pages through chat when the engine can copy them server-side.** The `mcbrain-engine` MCP's `ingest_from_notion` tool calls Notion's REST API directly from the user's host and writes page bodies straight to `raw/notes/`. Page contents never enter the chat / LLM context — only summary counts come back. Use it whenever it's available; only fall back to the LLM-mediated `notion-fetch` path if the engine refuses (vault not Notion-enabled, no token on host) and the user can't fix that right now.
+
+1. **Server-side copy via the engine MCP.** Call:
+
+   ```
+   ingest_from_notion(vault=<this vault's name>)
+   ```
+
+   The engine drains the vault's registered Notion DB, converts each page's blocks to markdown, and writes one file per page to `raw/notes/<slug>-<short_id>.md` with frontmatter:
 
    ```yaml
    ---
-   source: notion-research-tracker
-   notion_url: <task page URL>
-   notion_page_id: <task page ID>
-   tracker: <tracker name>
-   task_title: <task name>
-   research_date: <date the runner wrote the page>
-   captured: YYYY-MM-DD
+   notion_id: <page id>
+   notion_url: <page URL>
+   last_edited_time: <ISO from Notion>
+   imported_at: <ISO when this run wrote the file>
    ---
    ```
 
-   Do not edit, summarize, or reformat the research output. Copy it as-is — `raw/` is immutable history.
-4. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/<slug>.md` files. Cite them in wiki pages exactly the same way you'd cite any other raw source.
-5. **Close the loop in Notion.** After the wiki write succeeds, flip the Notion task's Status to `Done`. If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
-6. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
-7. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately.
+   Idempotent: pages whose `last_edited_time` matches the local file are skipped. Surface `imported_count` and `skipped_count` to the user.
+
+2. **If the engine refused with "vault not configured for Notion ingest"**, tell the user the vault needs to be enabled and (with their confirmation) call `enable_notion_for_vault(vault=<name>, database_id=<NOTION_DB_ID>)` — the DB id is in this CLAUDE.md's `## Notion companion databases` section. Then retry step 1.
+
+3. **If the engine refused with "Notion integration token not found"**, walk the user through `mcbrain-setup` Step 8f (the Terminal-based token install) and retry step 1 once they confirm the file is in place. **Never** ask the user to paste the token in chat — it's a bearer credential.
+
+4. **Fallback (engine path genuinely unavailable).** Only if the engine MCP isn't loaded at all, warn the user *"Falling back to LLM-mediated Notion ingest — each page's body will pass through this chat."* Then look up the DB in this CLAUDE.md's `## Notion companion databases` section, query the tracker for rows with Status `In progress` whose page body contains the runner's `## Summary` / `## Key Findings` / `## Sources` headings, and write each page to `raw/notes/<slug>.md` with provenance frontmatter (`source: notion-research-tracker`, `notion_url`, `notion_page_id`, `tracker`, `task_title`, `research_date`, `captured`).
+
+5. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/*.md` files. Skip files whose `notion_id` already appears in the `sources:` frontmatter of any wiki page — those have been ingested before. Cite them in wiki pages exactly the same way you'd cite any other raw source.
+
+6. **Close the loop in Notion.** After the wiki write succeeds for each task, flip the Notion task's Status to `Done` (one `notion-update-page` call per task — that small write does pass through the connector, but it's metadata, not content). If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
+
+7. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
+
+8. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately.
 
 ### Query
 When asked a question against the wiki:
