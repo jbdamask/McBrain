@@ -891,26 +891,48 @@ Pick the right paths for `OS_TYPE`:
 > sometimes land; engine source files (~10–40 KB+) often don't. The
 > Write tool runs natively on the host and is the only reliable path.
 
-For each runtime source file:
+**Don't copy from a hardcoded file list — enumerate the plugin's
+`mcp-server/` directory and copy every file at its top level.** The
+plugin's runtime surface grows over time (e.g. `notion.py` was added
+in v2.1.0); a hardcoded list silently misses new modules and the
+engine fails at runtime with an `ImportError`. Instead:
 
-1. Read it from the plugin install with the **Read** tool:
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/launcher.py`
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/mcbrain_engine.py`
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/paths.py`
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/registry.py`
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/schema.sql`
-   - `${CLAUDE_PLUGIN_ROOT}/mcp-server/requirements.txt`
-2. Write it to the destination with the **Write** tool — destination
-   path is `<application-support-mount>/mcbrain-engine/<filename>`.
+1. **List the source directory.** Run `ls
+   ${CLAUDE_PLUGIN_ROOT}/mcp-server/` (Bash on the plugin path is
+   safe — that's not a Cowork mount, it's the plugin install).
+   You should see a flat directory of files:
+   - `*.py` modules (`launcher.py`, `mcbrain_engine.py`, `paths.py`,
+     `registry.py`, `notion.py`, plus any future additions)
+   - `schema.sql`
+   - `requirements.txt`
+   - `README.md` (skip — runtime doesn't need it)
+   - **No subdirectories** at this level. If `ls` shows any other
+     subdir besides what's listed above, surface it to the user and
+     ask before copying.
+2. **For each `.py` file, plus `schema.sql` and `requirements.txt`**:
+   Read with the Read tool from `${CLAUDE_PLUGIN_ROOT}/mcp-server/<name>`,
+   write with the Write tool to
+   `<application-support-mount>/mcbrain-engine/<name>`. Skip
+   `README.md` — runtime doesn't need it.
 
 Creating the destination directory `<application-support-mount>/mcbrain-engine/`
 with Bash `mkdir -p` against the mount path is fine — `mkdir` is small
 and idempotent and doesn't trigger the FUSE flush problem. The danger
 is *file-content* writes, not directory creation.
 
-After all six files are written, verify with `ls -l` on the mount and
-**check the byte sizes match the source files** (a 0-byte or
-truncated `mcbrain_engine.py` is the classic FUSE-flush failure mode).
+After all files are written, verify by **counting and size-matching
+against the source directory**:
+
+```bash
+ls -1 ${CLAUDE_PLUGIN_ROOT}/mcp-server/ | grep -vE '^(README\.md|venv|__pycache__)$' | sort
+ls -1 <application-support-mount>/mcbrain-engine/ | grep -vE '^(venv|__pycache__)$' | sort
+```
+
+The two listings should match exactly (same filenames, same count).
+Then `ls -l` both directories and **check the byte sizes match
+file-by-file** — a 0-byte or truncated `mcbrain_engine.py` is the
+classic FUSE-flush failure mode, and a missing file is the bug we
+saw with `notion.py` in v2.1.0 setups.
 If any size is wrong or any file is missing, re-run the Write for that
 file — do not try to "fix" it with Bash.
 
