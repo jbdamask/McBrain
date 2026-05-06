@@ -56,6 +56,33 @@ The embedding model lives in FastEmbed's shared cache (`~/.cache/fastembed/` on 
 
 Existing vaults that pre-date the engine get an automatic migration prompt the next time the `mcbrain` skill is invoked against them.
 
+### Fixing `mcbrain-engine` on macOS
+
+If Cowork's `mcbrain-engine` is failing with `Python 3.10+ required` or `ensurepip ... exit status 1`, run this:
+
+```bash
+# Install pyenv and Python 3.13
+brew install pyenv
+echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
+echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
+echo 'eval "$(pyenv init - zsh)"' >> ~/.zshrc
+source ~/.zshrc
+pyenv install 3.13.13
+pyenv global 3.13.13
+
+# Make Cowork find it (it doesn't read your .zshrc)
+ln -sf "$(pyenv which python3.13)" /opt/homebrew/bin/python3
+
+# Clear mcbrain's broken venv and restart Cowork
+rm -rf "$HOME/Library/Application Support/mcbrain-engine/venv"
+```
+
+Quit Cowork (Cmd+Q) and relaunch. First start takes ~30 seconds to build the venv — if it errors, restart once more.
+
+**Intel Macs:** swap `/opt/homebrew/bin` for `/usr/local/bin`.
+
+**Why this works:** macOS's system Python is 3.9 (too old, can't replace). Homebrew's 3.13/3.14 bottles currently have a `libexpat` bug that breaks venv creation. pyenv builds Python from source, dodging the bug. The symlink is needed because GUI apps don't inherit your shell `PATH`.
+
 ## Research tracker backends
 
 Each McBrain vault can be paired with **one** research tracker. `mcbrain-setup` Step 8 asks you to pick a backend; the choice is recorded in the vault's `CLAUDE.md` under a `## Research tracker` section, and downstream skills route on it. The two backends are mutually exclusive per vault.
