@@ -1079,23 +1079,48 @@ Store the choice as `RESEARCH_TRACKER_BACKEND` ∈ {`local`, `notion`, `none`}.
 
 ---
 
+### CLAUDE.md state at the start of Step 8 — order of operations (read before editing CLAUDE.md)
+
+By the time setup reaches Step 8, **CLAUDE.md already exists** at `VAULT_PATH/CLAUDE.md`. It was written in **Step 3** from `references/claude-md-template.md`, then Step 3 appended the `## Web Ingestion Routing` and `## Backup` sections. The Research tracker section in that file currently reads:
+
+```markdown
+## Research tracker
+
+<explanation paragraphs from the template>
+
+Backend: none
+
+<HTML comments showing the local- and notion-formatted bodies>
+```
+
+Step 8L (local branch) and Step 8e (Notion branch) both make a **targeted in-place edit** to this existing file — they do NOT rewrite it. Concretely: change the `Backend: none` line to `Backend: local` (or `Backend: notion`) and add the corresponding body lines immediately below it. Use the Edit tool against the existing file. Do not Write the whole CLAUDE.md from scratch.
+
+Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query engine` section separately — it does not regenerate CLAUDE.md and does not touch the Research tracker section. So the three CLAUDE.md edit points (Step 3 = create from template + append Web Ingestion + Backup; Step 8L/8e = update Research tracker; Step 8.5 = patch Query engine) are non-overlapping and must each stay in their lane.
+
+> **Common confusion to avoid:** the migrate step in Step 8.5 does **not** create CLAUDE.md. CLAUDE.md exists from Step 3. Migrate only adds one section (`## Query engine`) to a file that's already on disk. Don't try to be clever and write a "complete" CLAUDE.md in Step 8L that includes a pre-baked Query engine section — the migrate step will then either fail to find its marker or duplicate the section.
+
+---
+
 ### Local backend branch (only if `RESEARCH_TRACKER_BACKEND == local`)
 
 **8L — Initialize the local research tracker.** Single sub-step, no Notion connector, no token, no MCP-engine call. Operate against the granted vault mount.
 
 1. **Pick a default topic.** Derive a sensible default from `MCP_NAME` — strip the `mcbrain-` prefix and use what's left as the topic name (e.g. `mcbrain-finance` → topic `Finance`, slug `finance`; `mcbrain` alone → topic `General`, slug `general`). Confirm with the user in one short turn — they may want a different first topic.
 2. **Ensure the directory and file exist.** Create `<VAULT_PATH>/raw/research_tasks/` if missing. Create an empty `<VAULT_PATH>/raw/research_tasks/tasks.jsonl` if missing (an empty JSONL file is valid). Use the Write tool against the granted mount — do not run `touch` via Bash.
-3. **Populate the `## Research tracker` section in `CLAUDE.md`.** The CLAUDE.md template (written by the migrate step in Step 8.5) ships with `Backend: none`. Edit that line to `Backend: local` and append the body below it:
+3. **Update the `## Research tracker` section in `CLAUDE.md`** with a targeted in-place edit. CLAUDE.md was already written in Step 3 from the template and currently has `Backend: none` in this section. Use the Edit tool to:
+   - Change the `Backend: none` line to `Backend: local`.
+   - Append the body block below the Backend line:
 
-   ```markdown
-   Backend: local
-   File: raw/research_tasks/tasks.jsonl
-   Topics:
-     - **<Topic>**
-       - Topic slug: <topic-slug>
-       - Registered: <YYYY-MM-DD>   <!-- look up today's date; do not guess -->
-       - Notes: companion local research tracker for this topic.
-   ```
+     ```markdown
+     File: raw/research_tasks/tasks.jsonl
+     Topics:
+       - **<Topic>**
+         - Topic slug: <topic-slug>
+         - Registered: <YYYY-MM-DD>   <!-- look up today's date; do not guess -->
+         - Notes: companion local research tracker for this topic.
+     ```
+
+   Do **not** rewrite CLAUDE.md from scratch and do **not** add a `## Query engine` section here — that's Step 8.5's job.
 
 4. **No engine-MCP call needed.** The engine doesn't need to know about local trackers — they are just files in the vault, and the filesystem MCP already has access. (Compare the Notion branch below, which calls `enable_notion_for_vault` in Step 8.5.)
 5. **Commit (Git strategy only).** If `BACKUP_STRATEGY == git`, present a single copy-paste fence (do not run git directly):
@@ -1153,7 +1178,7 @@ Store the choice as `NOTION_DB_INTENT` ∈ {`yes-existing`, `yes-create`}. (The 
 
 The `notion-research-db` skill will also write a registration entry — let it. Step 8e below either *adds* the entry (if the skill didn't, e.g., for the existing-database path) or *verifies* the entry the skill wrote.
 
-**8e — Register in CLAUDE.md.** The canonical location for registered companion databases is the `## Research tracker` section in `VAULT_PATH/CLAUDE.md`. The CLAUDE.md template (written by the migrate step in Step 8.5) ships with `Backend: none` — edit that line to `Backend: notion` and append the body below it (creating the section from the template if migrate has not yet run):
+**8e — Register in CLAUDE.md.** The canonical location for registered companion databases is the `## Research tracker` section in `VAULT_PATH/CLAUDE.md`. CLAUDE.md was written in Step 3 from `references/claude-md-template.md`, so it already exists on disk with `Backend: none` in this section. Use the Edit tool to make a targeted in-place change: rewrite the `Backend: none` line to `Backend: notion` and append the body lines below it (do NOT rewrite the whole file; do NOT add a `## Query engine` section — Step 8.5 handles that separately):
 
 ```markdown
 ## Research tracker
