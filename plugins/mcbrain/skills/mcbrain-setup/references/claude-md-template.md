@@ -119,7 +119,9 @@ A single source may touch 5-15 wiki pages. That's normal.
 
 #### Ingest from Notion research tracker
 
-Use when the user has just finished a `notion-research-runner` pass, or references the Notion tracker / completed research / those tasks. The `notion-research-runner` skill leaves completed research on Notion task pages with Status `In progress`; this mode pulls that output into `raw/` and then runs the standard wiki-update steps.
+Use this when CLAUDE.md's `## Research tracker → Backend` is `notion` and the user has just finished a `notion-research-runner` pass, or references the Notion tracker / completed research / those tasks. (For `Backend: local`, the `local-research-runner` writes findings directly to `raw/notes/` so the standard ingest flow handles them — no special procedure required.)
+
+The `notion-research-runner` skill leaves completed research on Notion task pages with Status `In progress`; this mode pulls that output into `raw/` and then runs the standard wiki-update steps.
 
 **Hard rule: do not re-research.** Do not spawn research subagents, do not call `notion-research-runner`, do not run web search for the topic. The research is already done — your job is to file it, not redo it.
 
@@ -144,7 +146,7 @@ Use when the user has just finished a `notion-research-runner` pass, or referenc
 
    Idempotent: pages whose `last_edited_time` matches the local file are skipped. Surface `imported_count` and `skipped_count` to the user.
 
-2. **If the engine refused with "vault not configured for Notion ingest"**, tell the user the vault needs to be enabled and (with their confirmation) call `enable_notion_for_vault(vault=<name>, database_id=<NOTION_DB_ID>)` — the DB id is in this CLAUDE.md's `## Notion companion databases` section. Then retry step 1.
+2. **If the engine refused with "vault not configured for Notion ingest"**, tell the user the vault needs to be enabled and (with their confirmation) call `enable_notion_for_vault(vault=<name>, database_id=<NOTION_DB_ID>)` — the DB id is in this CLAUDE.md's `## Research tracker` section under `Notion databases:`. Then retry step 1.
 
 3. **If the engine refused with "Notion integration token not found"**, walk the user through `mcbrain-setup` Step 8f (the Terminal-based token install) and retry step 1 once they confirm the file is in place. **Never** ask the user to paste the token in chat — it's a bearer credential.
 
@@ -212,6 +214,7 @@ Sources can arrive in `raw/` through several paths. All feed the same ingest pro
 - **Claude in Chrome via Cowork** — when the user asks Claude to ingest a URL, Claude can navigate the page (including authenticated/paywalled ones, since it shares the user's browser session), convert to markdown, and save to `raw/articles/<slug>.md`.
 - **Hand drops** — the user drags PDFs into `raw/papers/`, pastes notes into `raw/notes/`, or otherwise adds files manually.
 - **Notion research tracker** — completed research run by `notion-research-runner` lives on Notion task pages. The Notion-bridged ingest mode (see `## Operations → Ingest from Notion research tracker`) copies those page bodies into `raw/notes/<slug>.md` with provenance frontmatter, then proceeds like any other raw source. Never re-run the research — the output already exists.
+- **Local research tracker** — completed research run by `local-research-runner` is written directly to `raw/notes/research-<topic-slug>-<task-id>.md` with `source: local-research-tracker` frontmatter. No bridged ingest mode is needed — the standard `Ingest from raw/` flow picks the files up alongside Web Clipper and hand-drop notes.
 
 Treat all of these identically once the file is on disk. Run the standard ingest procedure regardless of how the source got there.
 
@@ -246,11 +249,39 @@ The query engine is a global stdio MCP server (`mcbrain-engine`) shared by every
 
 If this section is missing or still uses the legacy `mode: lexical+semantic` marker (no `(mcp)` suffix), the `mcbrain` skill detects it on next invocation and offers to upgrade by calling the `mcbrain-engine` MCP's `migrate` tool.
 
-## Notion companion databases
+## Research tracker
 
-Companion Notion research trackers registered to this vault. The Notion-bridged ingest mode reads this section to find which DB to drain. `mcbrain-setup` (Step 8) populates the first entry; `notion-research-db` adds entries when the user creates additional trackers. Leave the section empty (just the heading + this paragraph) if no Notion DB is paired.
+This section names the **single research-tracker backend** for this vault. Two backends are supported:
 
-<!-- Entries below — one per database -->
+- `local` — research tasks live in a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl`. The `local-research-runner` skill drains "To do" rows, runs research subagents, and writes findings directly to `raw/notes/research-<topic-slug>-<task-id>.md` (which the standard ingest then picks up).
+- `notion` — research tasks live in a Notion database. The `notion-research-runner` skill drains the database and writes findings back to each task's Notion page; the Notion-bridged ingest mode (see `## Operations → Ingest from Notion research tracker`) then copies those pages into `raw/notes/`.
+- `none` — no research tracker is paired with this vault.
+
+The `Backend:` line below is the source of truth. Downstream skills (`mcbrain`, `local-research-runner`, `notion-research-runner`, `local-research-db`, `notion-research-db`) all read it to decide what to do. `mcbrain-setup` (Step 8) populates this section at vault creation; the `*-research-db` skills append additional topics/databases later.
+
+**Legacy fallback:** if this section is missing entirely (vault pre-dates this format) but a `## Notion companion databases` section exists with at least one entry, treat the backend as `notion` and use that legacy section's entries as the database list. Do not synthesize a missing `Backend:` value any other way.
+
+Backend: none
+
+<!-- When Backend is `local`, list the file and topics:
+File: raw/research_tasks/tasks.jsonl
+Topics:
+  - **<Research Topic>**
+    - Topic slug: <slug>
+    - Registered: <YYYY-MM-DD>
+    - Notes: companion local research tracker for this topic.
+-->
+
+<!-- When Backend is `notion`, list the registered databases:
+Notion databases:
+  - **<Database Name>**
+    - URL: <Notion URL>
+    - Database ID: <hex id>
+    - Registered: <YYYY-MM-DD>
+    - Notes: companion research tracker for this vault.
+-->
+
+<!-- When Backend is `none`, leave the body empty (just keep the explanation block above). -->
 
 ## Domain
 
