@@ -30,7 +30,7 @@ McBrain bundles several Skills that:
 
 Pick your tracker backend: a **local JSONL file** inside the vault (zero dependencies, works offline) or a **Notion database** (visual taskboard). The plugin bundles seven cooperating skills so you can install everything in one click from Claude Desktop.
 
-The idea in one sentence: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent markdown wiki that compounds over time. Obsidian is the IDE; Claude is the programmer; McBrain is the codebase.
+The idea in one sentence: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent wiki that compounds over time. 
 
 ## Requirements
 - [Claude Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) with an active Claude license
@@ -38,8 +38,8 @@ The idea in one sentence: instead of re-deriving knowledge from raw sources ever
 ## Recommended
 - A [GitHub](https://github.com/) account. Useful for backing up your McBrain.
 - [Claude for Chrome extension](https://chromewebstore.google.com/publisher/anthropic/u308d63ea0533efcf7ba778ad42da7390) Very helpful for accessing data from websites that require you to login.
-- [Obsidian](https://obsidian.md/) for viewing your knowledgebase
-- [Obsidian Web Clipper](https://obsidian.md/clipper) Very helpful for when you're browsing the web and find something you want to save to McBrain
+- [Obsidian](https://obsidian.md/) for viewing your knowledgebase. **Optional** — McBrain is just a folder of markdown files, so any editor (VS Code, Zed, Typora, plain `vim`) works. Setup never checks whether Obsidian is installed; Step 6 of `mcbrain-setup` is a GUI walkthrough you can skip if you don't use Obsidian. Obsidian is recommended because of its graph view, backlinks panel, and the Web Clipper extension.
+- [Obsidian Web Clipper](https://obsidian.md/clipper) Very helpful for when you're browsing the web and find something you want to save to McBrain. Requires Obsidian; if you skip Obsidian, use Claude for Chrome or hand-drop files into `raw/` instead.
 - [Notion](https://www.notion.com/) *(optional)* — gives you a visual taskboard for research backlogs. The local JSONL backend is the default and needs no external service; Notion is just a nicer UI if you already use it.
 
 ## Setup
@@ -145,7 +145,7 @@ Vaults that pre-date this option keep working — McBrain falls back to the lega
 The `mcbrain` plugin contains seven skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
 
 ### [`mcbrain-setup`](./plugins/mcbrain/skills/mcbrain-setup)
-One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, **provisions the per-vault query engine**, walks through Obsidian and browser-extension setup, and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
+One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, **provisions the per-vault query engine**, optionally walks through Obsidian and browser-extension setup (you can skip if you don't use Obsidian — McBrain works against the markdown vault directly), and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
 
 ### [`mcbrain`](./plugins/mcbrain/skills/mcbrain)
 Day-to-day operating skill for McBrain. Handles ingesting sources into the vault, querying the wiki, filing synthesis pages, and linting. Supports multiple vaults (e.g. `mcbrain-finance`, `mcbrain-ai-science`) by mapping the user's request to the matching MCP filesystem server. Triggered by phrases like "ingest this", "save to mcbrain", "ask my brain", or any reference to the user's wiki / second brain.
@@ -167,7 +167,7 @@ The Notion-backend twin of `local-research-runner`. Drains the "To do" queue of 
 
 ## Typical workflow
 
-1. Run **`mcbrain-setup`** once to scaffold a vault and wire up Claude Desktop + Obsidian. Pick `local` (recommended) or `notion` as your research-tracker backend during Step 8.
+1. Run **`mcbrain-setup`** once to scaffold a vault and wire up Claude Desktop (and Obsidian, if you use it — it's optional). Pick `local` (recommended) or `notion` as your research-tracker backend during Step 8.
 2. Use **`mcbrain`** as you read, browse, and think — to ingest sources, query the vault, and file syntheses.
 3. Add research tasks to your tracker (drag rows into `tasks.jsonl` or have Claude write them; for Notion, use the Notion UI). When you're ready, ask Claude to "run the research queue" — it'll pick the right runner (`local-research-runner` or `notion-research-runner`) based on your CLAUDE.md backend setting. Findings flow back into the wiki.
 
