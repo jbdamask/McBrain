@@ -1,16 +1,44 @@
 <img src="img/mcbrain.png" width="300" height="250">
 
-A Claude plugin for building and operating **McBrain** — a persistent, LLM-maintained personal knowledge base based on [Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) — plus companion skills for running research workflows. Pick your tracker backend: a **local JSONL file** inside the vault (zero dependencies, works offline) or a **Notion database** (visual taskboard). The plugin bundles seven cooperating skills so you can install everything in one click from Claude Desktop.
+
+## What is this?
+An easy-to-use tool for making personal knowledge bases in Claude Cowork. It's based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
+
+## Why is it useful?
+Research used to be done by searching the internet for information, reading lots of pages, taking notes, then writing up a report. The more organized among us would create project folders to save their documents.
+
+Recently, LLMs have streamlined much of this through their ability to search the web on their own and compile a report. But what happens if you want to steer the research in a certain direction? Or include pulic and proprietary data? Maybe you're a fan of Top Chef and want to see the cultural impact? Or maybe you're thinking of investing in a hot new AI startup that claims its going to disrupt the Electronic Health Records market? This takes more work and is usually best served by first compiling a bunch of information into a knowledge base and pointing Claude at it. 
+
+Even though LLMs can work against a folder of files, it turns out that they are even better if the files are linked based on content. This is the same concept as Wikipedia: comphrehensive research is best done by reading connected documents.
+
+Even better, McBrains are designed to grow over time. You can add content in a variety of ways and simply talk with Claude about the contents. One of the most useful aspects of this is that any insights that surface from chatting with your McBrain can be written back into the McBrain. This means that learnings are cumulative and available across all Claude sessions!
+
+## Why is it called McBrain?
+Because it's fast, easy, and you can live on it for a while. It's designed for personal use, not team or enterprise.
+
+## How does it work?
+Simply install the plugin in Claude Desktop and you can then make as many McBrain's as you want. Each McBrain lives on your computer as a set of folders and files. 
+
+McBrain bundles several Skills that:
+- Simplify setup and configuration from within Claude Cowork on Mac or PC.
+- Create a research task database to help your knowledge base grow over time.
+- Execute up to five research tasks in parallel using subagents.
+- Ingest documents into the knowledge base.
+- Create a local search engine that allows Claude to quickly find information regardless of how big your McBrain gets.
+- Adds confidence scores to information sources.
+- Help you backup your McBrain to GitHub so you don't lose your knowledge base!
+
+Pick your tracker backend: a **local JSONL file** inside the vault (zero dependencies, works offline) or a **Notion database** (visual taskboard). The plugin bundles seven cooperating skills so you can install everything in one click from Claude Desktop.
 
 The idea in one sentence: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent markdown wiki that compounds over time. Obsidian is the IDE; Claude is the programmer; McBrain is the codebase.
 
 ## Requirements
 - [Claude Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) with an active Claude license
-- [Obsidian](https://obsidian.md/)
 
 ## Recommended
 - A [GitHub](https://github.com/) account. Useful for backing up your McBrain.
 - [Claude for Chrome extension](https://chromewebstore.google.com/publisher/anthropic/u308d63ea0533efcf7ba778ad42da7390) Very helpful for accessing data from websites that require you to login.
+- [Obsidian](https://obsidian.md/) for viewing your knowledgebase
 - [Obsidian Web Clipper](https://obsidian.md/clipper) Very helpful for when you're browsing the web and find something you want to save to McBrain
 - [Notion](https://www.notion.com/) *(optional)* — gives you a visual taskboard for research backlogs. The local JSONL backend is the default and needs no external service; Notion is just a nicer UI if you already use it.
 
