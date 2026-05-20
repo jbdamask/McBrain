@@ -19,7 +19,7 @@ not** ask "Which skills/commands would you like included?". Those are
 plugin-builder behaviors and they don't apply here.
 
 Use the SKILL's prescribed `AskUserQuestion` shapes for multi-choice
-intake (OS, backup strategy, gh installed, Notion DB intent) and plain
+intake (OS, backup strategy, gh installed) and plain
 conversational asks for free-text inputs (vault name, path, GitHub
 username, version paste-backs). The full intake list is in the SKILL's
 "Required intake" section — follow it verbatim, don't add questions.

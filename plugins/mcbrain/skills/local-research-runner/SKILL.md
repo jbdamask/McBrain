@@ -7,12 +7,10 @@ description: Pull up to 5 "To do" tasks from a local JSONL research tracker (raw
 
 Drain the "To do" queue of a local JSONL research tracker (the kind initialized by the `local-research-db` skill) by researching each task with a subagent and writing findings as markdown files into the vault's `raw/notes/` directory. The standard McBrain ingest flow then picks those files up — there is no special "local-bridged" ingest mode.
 
-This skill is the local-backend twin of `notion-research-runner`. CLAUDE.md's `## Research tracker → Backend` line decides which one applies. Use this skill when `Backend: local`; use `notion-research-runner` when `Backend: notion`.
-
 ## Prerequisites
 
 - The vault must be a McBrain vault — exposed as a filesystem MCP server named `mcbrain-<topic>` (or `mcbrain` for a single default vault).
-- The vault's `CLAUDE.md` must have `## Research tracker → Backend: local`. (Legacy fallback: a vault that has `## Notion companion databases` but no `## Research tracker` section is treated as `Backend: notion` and is **not** handled by this skill — point the user at `notion-research-runner` instead.)
+- The vault's `CLAUDE.md` must have `## Research tracker → Backend: local`.
 - The vault must have `raw/research_tasks/tasks.jsonl` (created by `local-research-db`).
 - Python 3 must be available on the user's host (for the atomic-write helper). No third-party packages, no extra CLI tools (no `flock(1)`, no `lockfile`, no `filelock`). Standard library is enough on macOS, Linux, and Windows alike.
 - The `Agent` tool must be available (for spawning research subagents). `WebSearch` / `WebFetch` are used **by the subagents**, not by this skill directly.
@@ -25,7 +23,7 @@ This skill is the local-backend twin of `notion-research-runner`. CLAUDE.md's `#
    - Zero topics → tell the user no topics are registered and stop.
 2. **Batch size.** Default 5. If the user asked for a different cap, honor it. Never exceed 5 in one run without explicit confirmation — parallel research burns tokens fast.
 
-That's the entire input set. There is no Notion connector to match, no database URL to paste.
+That's the entire input set.
 
 ## The Atomic Write Protocol — read this once
 
@@ -74,7 +72,7 @@ The lock is not held during this phase — it would defeat the point of doing re
 
 Spawn one `general-purpose` subagent per claimed task, **in a single message with multiple `Agent` tool calls** so they run in parallel. Use the prompt template at `references/research_subagent_prompt.md`. Fill in:
 
-- `RESEARCH_TOPIC` — the topic name (not the slug, not the database title).
+- `RESEARCH_TOPIC` — the topic name (not the slug).
 - `TASK_NAME` — the row's `task_name`.
 - `PRIORITY` — the row's `priority`.
 - `NOTES_OR_"(none)"` — the row's `notes` field, or the literal string `(none)` if empty.

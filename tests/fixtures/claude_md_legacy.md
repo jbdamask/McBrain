@@ -15,11 +15,6 @@ A vault that pre-dates the McBrain query engine. The patcher should rewrite the 
 5. Append to `wiki/log.md`.
 6. Done.
 
-#### Ingest from Notion research tracker
-
-1. Pull tasks.
-2. File them.
-
 ### Query
 When asked a question against the wiki:
 1. Read `wiki/index.md` to find relevant pages

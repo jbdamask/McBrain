@@ -1,21 +1,16 @@
 ---
 name: local-research-db
-description: Initialize a local research-task tracker for a McBrain vault — a single JSONL file under raw/research_tasks/ that the local-research-runner skill drains. Use when the user wants a research tracker that does not depend on Notion, says "set up a local research tracker", "add a research topic to my vault", "make a JSONL tracker for X", or asks for a research backlog stored inside the vault itself rather than in an external service.
+description: Initialize a JSONL-based research-task tracker for a McBrain vault — a single JSONL file under raw/research_tasks/ that the local-research-runner skill drains. Use when the user says "set up a local research tracker", "add a research topic to my vault", "make a JSONL tracker for X", or asks for a research backlog stored inside the vault itself as plain files.
 ---
 
 # Local Research DB
 
 Initialize (or extend) a local research-task tracker for a McBrain vault. The tracker is a single JSONL file at `<vault>/raw/research_tasks/tasks.jsonl` — one JSON object per line, all topics in one file, topic-as-a-field (not a folder). The companion skill `local-research-runner` drains "To do" rows from this file, runs research subagents, writes findings to `raw/notes/`, and flips rows to "Done".
 
-This skill is the local-backend twin of `notion-research-db`. Pick this one when the user does not have Notion (or does not have admin rights to create Notion integrations), or when they prefer their research backlog to live entirely inside the vault as plain files.
-
 ## When to Use
 
-- User wants a research tracker that does not depend on Notion.
 - User says "set up a local research tracker", "register a research topic in my vault", "spin up a JSONL backlog for X".
 - User has run `mcbrain-setup` and chose `Local` as the research-tracker backend, and now wants to add an additional topic.
-
-Do **not** use this skill if the user wants a Notion-backed tracker — use `notion-research-db` instead. CLAUDE.md's `## Research tracker → Backend` line decides which backend a vault is on; do not silently switch backends.
 
 ## Prerequisites
 
@@ -28,7 +23,7 @@ Do **not** use this skill if the user wants a Notion-backed tracker — use `not
 1. **Research topic** — free-form string (e.g. "CRISPR base editing", "AI evals literature"). Used to derive the topic slug and to label tracker rows. If the user did not supply one, ask.
 2. **Associated McBrain vault** — see *Identifying the McBrain vault* below. Resolve this **before** writing anything.
 
-That's the entire input set. There is no parent page (no Notion), no database name, no schema choice.
+That's the entire input set. There is no parent page, no database name, no schema choice.
 
 ## Identifying the McBrain vault
 
@@ -82,9 +77,8 @@ Operate against the chosen `mcbrain-*` MCP. Use Read/Write/Edit on paths relativ
 4. **Register in `CLAUDE.md`.** Read `CLAUDE.md` from the vault root and update the `## Research tracker` section.
 
    - **If the section exists with `Backend: local`:** append the new topic to the existing `Topics:` list. Do not duplicate an entry that's already present (match on `Topic slug`).
-   - **If the section exists with `Backend: notion`:** stop and tell the user this vault is already paired with Notion. Ask whether to switch the backend to local (which is destructive — the runner will then look in `raw/research_tasks/`, not in Notion), or to keep Notion and skip this step. Do NOT silently overwrite.
    - **If the section exists with `Backend: none`:** rewrite `Backend: none` to `Backend: local` and populate the body with the `File:` line and a `Topics:` list containing this entry.
-   - **If the section does not exist** (legacy vault): create it just before the `## Domain` section, with `Backend: local`, the `File:` line, and the new topic entry. (Do not touch the legacy `## Notion companion databases` section if it exists — leave it for back-compat reads.)
+   - **If the section does not exist** (legacy vault): create it just before the `## Domain` section, with `Backend: local`, the `File:` line, and the new topic entry.
 
    The entry format is:
 
@@ -144,7 +138,6 @@ Running this skill twice with the same topic and the same vault should be a no-o
 
 - **Vault MCP unavailable.** Stop and tell the user the vault must be reachable to write CLAUDE.md.
 - **CLAUDE.md is read-only or has an unexpected layout** (no `## Domain` anchor, no place to insert the section). Surface the conflict to the user, show the diff you wanted to apply, and ask them to apply it manually rather than guessing.
-- **Backend conflict (vault is on `notion`, user asked for `local`).** Stop, surface the conflict, do not switch backends without explicit confirmation. Single-backend per vault is a deliberate constraint.
 - **Slug collision.** If the slug already exists under a different topic name, ask the user whether the topics are actually the same (re-use existing slug) or different (add a numeric suffix to disambiguate).
 
 ## Non-Goals
@@ -153,4 +146,3 @@ Running this skill twice with the same topic and the same vault should be a no-o
 - Do **not** modify rows in `tasks.jsonl` (status flips, findings updates) — that is the runner's job.
 - Do **not** invoke any MCP tool other than the vault's filesystem MCP.
 - Do **not** run git directly — always present a copy-paste fence.
-- Do **not** silently switch a vault's backend from `notion` to `local`.
