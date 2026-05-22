@@ -10,11 +10,11 @@ A personal knowledge base maintained by Claude. Raw sources live in `raw/`. Clau
 
 Three layers, three jobs:
 
-- **CLAUDE.md** — Claude's operating manual for this vault: schema, page conventions, ingest/query/lint procedures, backup config, MCP plumbing, and registered companion systems (e.g. Notion trackers). Anything Claude needs to *do its job* lives here.
+- **CLAUDE.md** — Claude's operating manual for this vault: schema, page conventions, ingest/query/lint procedures, backup config, MCP plumbing, and registered companion systems. Anything Claude needs to *do its job* lives here.
 - **`raw/`** — immutable source documents. Inputs.
 - **`wiki/`** — compiled knowledge derived from `raw/`. Concept pages, entity pages, syntheses. Every page has provenance (`sources:` frontmatter pointing back to `raw/`).
 
-The rule: **if Claude needs it to do its job, it lives in CLAUDE.md; if it's a fact about the world derived from a source, it lives in `wiki/`.** Plumbing (the Notion DB registry, the git remote, the MCP path) does not belong in `wiki/` — wiki pages have provenance and citations, plumbing doesn't. When in doubt, ask which question the content answers: *"how do I operate this vault?"* (CLAUDE.md) vs *"what do we know about X?"* (`wiki/`).
+The rule: **if Claude needs it to do its job, it lives in CLAUDE.md; if it's a fact about the world derived from a source, it lives in `wiki/`.** Plumbing (the git remote, the MCP path) does not belong in `wiki/` — wiki pages have provenance and citations, plumbing doesn't. When in doubt, ask which question the content answers: *"how do I operate this vault?"* (CLAUDE.md) vs *"what do we know about X?"* (`wiki/`).
 
 ## Directory layout
 
@@ -100,11 +100,7 @@ Link to related concepts using [[wikilinks]] throughout the text.
 
 ### Ingest
 
-"Ingest" has two modes. The `mcbrain` skill picks one based on conversation context (see its routing section). Both modes ultimately funnel through the same wiki-update steps below — the difference is where the source comes from.
-
-#### Ingest from raw/
-
-Use when the user says "ingest" with no Notion context, or names a file already in `raw/`.
+Ingest reads files from `raw/` and updates `wiki/` accordingly. Use when the user says "ingest" or names a file already in `raw/`.
 
 1. **Find what's unprocessed.** If the user did not name a specific file, scan `raw/` recursively and diff against the `sources:` frontmatter field of every page in `wiki/`. Anything in `raw/` that no wiki page lists as a source is a candidate. List the candidates and confirm with the user before processing more than one or two at a time.
 2. Read each source file in full.
@@ -116,49 +112,6 @@ Use when the user says "ingest" with no Notion context, or names a file already 
 8. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately. Cheap (sub-second on no-op).
 
 A single source may touch 5-15 wiki pages. That's normal.
-
-#### Ingest from Notion research tracker
-
-Use this when CLAUDE.md's `## Research tracker → Backend` is `notion` and the user has just finished a `notion-research-runner` pass, or references the Notion tracker / completed research / those tasks. (For `Backend: local`, the `local-research-runner` writes findings directly to `raw/notes/` so the standard ingest flow handles them — no special procedure required.)
-
-The `notion-research-runner` skill leaves completed research on Notion task pages with Status `In progress`; this mode pulls that output into `raw/` and then runs the standard wiki-update steps.
-
-**Hard rule: do not re-research.** Do not spawn research subagents, do not call `notion-research-runner`, do not run web search for the topic. The research is already done — your job is to file it, not redo it.
-
-**Hard rule: do not pull pages through chat when the engine can copy them server-side.** The `mcbrain-engine` MCP's `ingest_from_notion` tool calls Notion's REST API directly from the user's host and writes page bodies straight to `raw/notes/`. Page contents never enter the chat / LLM context — only summary counts come back. Use it whenever it's available; only fall back to the LLM-mediated `notion-fetch` path if the engine refuses (vault not Notion-enabled, no token on host) and the user can't fix that right now.
-
-1. **Server-side copy via the engine MCP.** Call:
-
-   ```
-   ingest_from_notion(vault=<this vault's name>)
-   ```
-
-   The engine drains the vault's registered Notion DB, converts each page's blocks to markdown, and writes one file per page to `raw/notes/<slug>-<short_id>.md` with frontmatter:
-
-   ```yaml
-   ---
-   notion_id: <page id>
-   notion_url: <page URL>
-   last_edited_time: <ISO from Notion>
-   imported_at: <ISO when this run wrote the file>
-   ---
-   ```
-
-   Idempotent: pages whose `last_edited_time` matches the local file are skipped. Surface `imported_count` and `skipped_count` to the user.
-
-2. **If the engine refused with "vault not configured for Notion ingest"**, tell the user the vault needs to be enabled and (with their confirmation) call `enable_notion_for_vault(vault=<name>, database_id=<NOTION_DB_ID>)` — the DB id is in this CLAUDE.md's `## Research tracker` section under `Notion databases:`. Then retry step 1.
-
-3. **If the engine refused with "Notion integration token not found"**, walk the user through `mcbrain-setup` Step 8f (the Terminal-based token install) and retry step 1 once they confirm the file is in place. **Never** ask the user to paste the token in chat — it's a bearer credential.
-
-4. **Fallback (engine path genuinely unavailable).** Only if the engine MCP isn't loaded at all, warn the user *"Falling back to LLM-mediated Notion ingest — each page's body will pass through this chat."* Then look up the DB in this CLAUDE.md's `## Notion companion databases` section, query the tracker for rows with Status `In progress` whose page body contains the runner's `## Summary` / `## Key Findings` / `## Sources` headings, and write each page to `raw/notes/<slug>.md` with provenance frontmatter (`source: notion-research-tracker`, `notion_url`, `notion_page_id`, `tracker`, `task_title`, `research_date`, `captured`).
-
-5. **Run the standard wiki-update steps** (steps 2–7 of *Ingest from raw/* above) against the new `raw/notes/*.md` files. Skip files whose `notion_id` already appears in the `sources:` frontmatter of any wiki page — those have been ingested before. Cite them in wiki pages exactly the same way you'd cite any other raw source.
-
-6. **Close the loop in Notion.** After the wiki write succeeds for each task, flip the Notion task's Status to `Done` (one `notion-update-page` call per task — that small write does pass through the connector, but it's metadata, not content). If the wiki write failed for a task, leave the Notion status at `In progress` and surface the error so the user can retry.
-
-7. Append to `wiki/log.md`: `## [YYYY-MM-DD] ingest (notion) | <tracker> — <N> tasks`.
-
-8. Call the `mcbrain-engine` MCP's `index_sync` tool against this vault so the new wiki page(s) are searchable immediately.
 
 ### Query
 When asked a question against the wiki:
@@ -213,8 +166,7 @@ Sources can arrive in `raw/` through several paths. All feed the same ingest pro
 - **Obsidian Web Clipper** (browser extension) — clips web articles directly into `raw/articles/` as markdown. Fast one-click capture from any tab the user is already on.
 - **Claude in Chrome via Cowork** — when the user asks Claude to ingest a URL, Claude can navigate the page (including authenticated/paywalled ones, since it shares the user's browser session), convert to markdown, and save to `raw/articles/<slug>.md`.
 - **Hand drops** — the user drags PDFs into `raw/papers/`, pastes notes into `raw/notes/`, or otherwise adds files manually.
-- **Notion research tracker** — completed research run by `notion-research-runner` lives on Notion task pages. The Notion-bridged ingest mode (see `## Operations → Ingest from Notion research tracker`) copies those page bodies into `raw/notes/<slug>.md` with provenance frontmatter, then proceeds like any other raw source. Never re-run the research — the output already exists.
-- **Local research tracker** — completed research run by `local-research-runner` is written directly to `raw/notes/research-<topic-slug>-<task-id>.md` with `source: local-research-tracker` frontmatter. No bridged ingest mode is needed — the standard `Ingest from raw/` flow picks the files up alongside Web Clipper and hand-drop notes.
+- **Local research tracker** — completed research run by `local-research-runner` is written directly to `raw/notes/research-<topic-slug>-<task-id>.md` with `source: local-research-tracker` frontmatter. The standard ingest flow picks the files up alongside Web Clipper and hand-drop notes.
 
 Treat all of these identically once the file is on disk. Run the standard ingest procedure regardless of how the source got there.
 
@@ -254,12 +206,9 @@ If this section is missing or still uses the legacy `mode: lexical+semantic` mar
 This section names the **single research-tracker backend** for this vault. Two backends are supported:
 
 - `local` — research tasks live in a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl`. The `local-research-runner` skill drains "To do" rows, runs research subagents, and writes findings directly to `raw/notes/research-<topic-slug>-<task-id>.md` (which the standard ingest then picks up).
-- `notion` — research tasks live in a Notion database. The `notion-research-runner` skill drains the database and writes findings back to each task's Notion page; the Notion-bridged ingest mode (see `## Operations → Ingest from Notion research tracker`) then copies those pages into `raw/notes/`.
 - `none` — no research tracker is paired with this vault.
 
-The `Backend:` line below is the source of truth. Downstream skills (`mcbrain`, `local-research-runner`, `notion-research-runner`, `local-research-db`, `notion-research-db`) all read it to decide what to do. `mcbrain-setup` (Step 8) populates this section at vault creation; the `*-research-db` skills append additional topics/databases later.
-
-**Legacy fallback:** if this section is missing entirely (vault pre-dates this format) but a `## Notion companion databases` section exists with at least one entry, treat the backend as `notion` and use that legacy section's entries as the database list. Do not synthesize a missing `Backend:` value any other way.
+The `Backend:` line below is the source of truth. Downstream skills (`mcbrain`, `local-research-runner`, `local-research-db`) all read it to decide what to do. `mcbrain-setup` (Step 8) populates this section at vault creation; the `*-research-db` skills append additional topics/databases later.
 
 Backend: none
 
@@ -270,15 +219,6 @@ Topics:
     - Topic slug: <slug>
     - Registered: <YYYY-MM-DD>
     - Notes: companion local research tracker for this topic.
--->
-
-<!-- When Backend is `notion`, list the registered databases:
-Notion databases:
-  - **<Database Name>**
-    - URL: <Notion URL>
-    - Database ID: <hex id>
-    - Registered: <YYYY-MM-DD>
-    - Notes: companion research tracker for this vault.
 -->
 
 <!-- When Backend is `none`, leave the body empty (just keep the explanation block above). -->

@@ -486,10 +486,3 @@ def test_claude_md_template_has_research_tracker_section() -> None:
         "## Research tracker section is missing the local backend's "
         "File: anchor."
     )
-    # Legacy section name should still be grep-matchable for back-compat
-    # readers that don't yet know about ## Research tracker.
-    assert "## Notion companion databases" in text, (
-        "Legacy ## Notion companion databases reference is gone — older "
-        "vaults that haven't migrated will lose their fallback path. "
-        "Keep at least a back-compat reference."
-    )

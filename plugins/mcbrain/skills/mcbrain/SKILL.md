@@ -68,52 +68,15 @@ The following procedures are specified in the vault's CLAUDE.md and must be foll
 
 - **What-lives-where rule** — see CLAUDE.md's `## What lives where` section. CLAUDE.md is for operating instructions and plumbing (schema, procedures, registered companion systems); `wiki/` is for compiled knowledge derived from `raw/` sources. Don't write plumbing into `wiki/` and don't write derived knowledge into CLAUDE.md.
 - **Raw-sources-first rule** — see CLAUDE.md's immutable rule forbidding wiki pages built from search results without a backing file in `raw/`.
-- **Source ingestion paths** — how Obsidian Web Clipper, Claude in Chrome, hand drops, and the Notion research tracker feed the ingest procedure.
+- **Source ingestion paths** — how Obsidian Web Clipper, Claude in Chrome, and hand drops feed the ingest procedure.
 - **Handling PDFs in `raw/papers/`** — the upload → Cowork `pdf` skill → `.md` → figure prose workflow.
 - **Handling images in sources** — text-first reading, filtering decorative images.
 
 If CLAUDE.md and this skill ever disagree, CLAUDE.md wins.
 
-## Routing "ingest" to the right mode
+## Ingest
 
-The word **ingest** in McBrain has two valid meanings, and Claude must pick the right one before acting. Picking wrong is the most common bug — if the user is talking about completed Notion research and Claude treats it as a generic ingest, it ends up re-running the research subagents. Do not do that.
-
-Decide between these two modes after reading CLAUDE.md, **before** doing any work:
-
-**Mode A — Notion-bridged ingest.** Use when any of these are true:
-- The current conversation has involved the `notion-research-runner` or `notion-research-db` skill, or research tasks were just completed in a Notion tracker registered to this vault.
-- The user references "the Notion pages", "the research", "those tasks", "the tracker", or names a research tracker explicitly.
-- The user says something like "ingest the research" / "ingest from Notion" / "pull the Notion findings into the wiki".
-
-In this mode, the source pages live in Notion, not on disk. The first step is to copy them into `raw/` (typically `raw/notes/`), then run the standard ingest on the resulting files. **Hard rule: never spawn research subagents and never call `notion-research-runner` from this mode — the research is already done.**
-
-### Use the server-side ingest tool — do NOT fetch pages through chat
-
-**Mandatory routing rule, overrides CLAUDE.md if it disagrees.** When you have Notion-bridged ingest work to do, **first attempt** the `mcbrain-engine` MCP's `ingest_from_notion` tool:
-
-```
-ingest_from_notion(vault=<this vault's name>)
-```
-
-That tool calls Notion's REST API directly from the user's host and writes page bodies straight to `<vault>/raw/notes/`. **Page contents do NOT pass through the chat / LLM context** — only summary counts come back. For any ingest of more than 2–3 pages this is dramatically cheaper in tokens, latency, and conversation-log exposure than the connector-based path.
-
-Three outcomes from that call:
-
-1. **Success** (`imported_count` ≥ 0, no auth/config errors). The pages are now in `raw/notes/` as markdown with frontmatter (`notion_id`, `notion_url`, `last_edited_time`, `imported_at`). Surface the imported / skipped counts to the user, then proceed to the **standard wiki-update steps** (steps 2–7 of *Ingest from raw/* in CLAUDE.md) against the new files. **Do not** also call `notion-fetch` / `notion-search` against those same pages — the ingest tool already pulled them.
-
-2. **Refused: vault not Notion-enabled.** Error message will say *"Vault X is not configured for Notion ingest. Run mcbrain-setup Step 8 to enable, or call enable_notion_for_vault(...)"*. Tell the user the vault needs to be enabled — give them the one-line MCP call:
-
-   > "This vault isn't configured for server-side Notion ingest yet. To enable, I'll need to call the engine's `enable_notion_for_vault` tool with the database ID. The DB is registered in your CLAUDE.md's `## Notion companion databases` section as `<NOTION_DB_ID>`. Want me to call it?"
-
-   On confirmation, call `enable_notion_for_vault(vault=<name>, database_id=<id>)`, then retry `ingest_from_notion`.
-
-3. **Refused: no Notion token on host.** Error mentions *"Notion integration token not found"*. Walk the user through `mcbrain-setup` Step 8f (the Terminal-based token install — never ask them to paste the token in chat). After they confirm the file is in place, retry `ingest_from_notion`.
-
-**Only fall back to the connector-based procedure** in CLAUDE.md (`notion-fetch` per page) if `ingest_from_notion` is genuinely unavailable — i.e. the engine MCP isn't loaded in this harness, or the user explicitly refuses to install a token. In that case warn the user *"Falling back to LLM-mediated Notion ingest. Each page's body will pass through this chat — slower and more token-expensive than the engine path."* before fetching anything.
-
-**Mode B — Standard ingest.** Use when there is no Notion context and the user says "ingest" with no source argument, or names a specific file already in `raw/`. Scan `raw/` for files that aren't yet referenced as a source in any `wiki/*.md` page, list them, and process per CLAUDE.md's `## Operations → Ingest from raw/` section.
-
-**Stating the choice.** Always tell the user which mode you picked and why, in one line, before you start work — e.g. *"Treating this as a Notion-bridged ingest because we just ran the research runner against the CRISPR tracker."* If both signals are present (Notion context **and** new files in `raw/`), or neither (no Notion context **and** `raw/` has nothing unprocessed), ask the user which they meant rather than guessing.
+Ingest reads files from the vault's `raw/` directory, runs the procedure in CLAUDE.md's `## Operations → Ingest from raw/` section, and updates the wiki. There is one mode. When the user says "ingest" with no source argument, scan `raw/` for files that aren't yet referenced as a source in any `wiki/*.md` page, list them, and process per CLAUDE.md.
 
 ## Backup and version control
 

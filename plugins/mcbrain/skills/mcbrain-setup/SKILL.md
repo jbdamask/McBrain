@@ -161,7 +161,7 @@ them, run setup end-to-end without going back to ask more.
 | 5 | `GITHUB_USERNAME` *(only if BACKUP_STRATEGY == git)* | A1 | Used to construct `REPO_URL`. |
 | 6 | `gh` CLI installed *(only if BACKUP_STRATEGY == git)* | A2 | Ask the user to paste `gh --version` output. **Never** check via Bash — see the STOP block above. If not installed, present the install command for `OS_TYPE`. |
 | 7 | `PYTHON_OK` (Python 3.10+ on host) | 5.5 | Ask the user to paste `python3 --version` (Mac) or `python --version` (Windows). **Never** check via Bash. |
-| 8 | `RESEARCH_TRACKER_BACKEND` ∈ {`local`, `notion`, `none`} | 8a | Asks where research tasks should live: a JSONL file inside the vault (`local`), a Notion database (`notion`), or skip for now (`none`). Default-recommend `local` — it has zero dependencies. If `notion`, also verify a Notion MCP connector is loaded (enumerate tools, look for ones whose names contain `notion`). If absent, tell the user to enable it from claude.ai → Connectors before continuing the Notion branch — don't try to install one yourself. |
+| 8 | `INIT_LOCAL_RESEARCH_TRACKER` ∈ {`yes`, `no`} | 8 | Asks: "Initialize a local research tracker now? yes/no". Sets up a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl` for queuing research questions. Zero dependencies, works offline. Skipping is fine — the user can add one later by re-running `mcbrain-setup` or running `local-research-db`. |
 
 **Do NOT ask any of the following**, even if it seems helpful:
 
@@ -179,14 +179,14 @@ as a setup variable or alter the vault structure based on it.
 
 **Ordering tip**: Items 1–4 can be asked up front in one or two short
 turns. Items 5–6 are conditional on git being chosen. Items 7 (Python
-check) and 8 (research-tracker backend) can also be asked early — that
-lets the user install Python or enable the Notion connector in parallel
-while later setup steps run, instead of blocking at Step 5.5 or Step 8.
+check) and 8 (research-tracker init) can also be asked early — that
+lets the user install Python in parallel while later setup steps run,
+instead of blocking at Step 5.5 or Step 8.
 
 ### How to ask: use `AskUserQuestion` for every multi-choice item
 
-Every intake item that is **multi-choice** (OS, backup strategy, Notion
-intent) **must** be asked via the built-in `AskUserQuestion` tool. The
+Every intake item that is **multi-choice** (OS, backup strategy)
+**must** be asked via the built-in `AskUserQuestion` tool. The
 later step descriptions hand you the **exact call shape** to use —
 question text, header chip, option labels, option descriptions, and
 which option to mark `(Recommended)`. Use those shapes verbatim. Do
@@ -893,16 +893,16 @@ Pick the right paths for `OS_TYPE`:
 
 **Don't copy from a hardcoded file list — enumerate the plugin's
 `mcp-server/` directory and copy every file at its top level.** The
-plugin's runtime surface grows over time (e.g. `notion.py` was added
-in v2.1.0); a hardcoded list silently misses new modules and the
-engine fails at runtime with an `ImportError`. Instead:
+plugin's runtime surface grows over time; a hardcoded list silently
+misses new modules and the engine fails at runtime with an
+`ImportError`. Instead:
 
 1. **List the source directory.** Run `ls
    ${CLAUDE_PLUGIN_ROOT}/mcp-server/` (Bash on the plugin path is
    safe — that's not a Cowork mount, it's the plugin install).
    You should see a flat directory of files:
    - `*.py` modules (`launcher.py`, `mcbrain_engine.py`, `paths.py`,
-     `registry.py`, `notion.py`, plus any future additions)
+     `registry.py`, plus any future additions)
    - `schema.sql`
    - `requirements.txt`
    - `README.md` (skip — runtime doesn't need it)
@@ -932,7 +932,7 @@ The two listings should match exactly (same filenames, same count).
 Then `ls -l` both directories and **check the byte sizes match
 file-by-file** — a 0-byte or truncated `mcbrain_engine.py` is the
 classic FUSE-flush failure mode, and a missing file is the bug we
-saw with `notion.py` in v2.1.0 setups.
+saw with module additions in earlier setups.
 If any size is wrong or any file is missing, re-run the Write for that
 file — do not try to "fix" it with Bash.
 
@@ -1044,38 +1044,22 @@ If Claude can read `CLAUDE.md`, the MCP is working. If not, troubleshoot:
 
 ## Step 8: Research tracker setup (optional)
 
-McBrain pairs nicely with a research tracker: a backlog where the user queues research questions, a runner skill drains the queue with parallel subagents and writes findings back, and the standard ingest flow pulls those findings into the wiki. This step wires up that pairing at setup time so it's already configured the first time the user wants to use it.
+McBrain pairs nicely with a local research tracker: a backlog where the user queues research questions, the `local-research-runner` skill drains the queue with parallel subagents and writes findings back to `raw/notes/`, and the standard ingest flow pulls those findings into the wiki. This step wires up that pairing at setup time so it's already configured the first time the user wants to use it.
 
-Two backends are supported and they are **mutually exclusive** (one backend per vault):
+The tracker is a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl`. Zero external dependencies, works offline.
 
-- **`local`** — research tasks live in a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl`. The `local-research-runner` skill drains "To do" rows and writes findings directly to `raw/notes/research-<topic-slug>-<task-id>.md`, where the standard ingest flow then picks them up. Zero external dependencies, works offline, no Notion connector needed. Default-recommend this option.
-- **`notion`** — research tasks live in a Notion database. The `notion-research-runner` skill drains the database and writes findings back to each Notion task page; the Notion-bridged ingest mode then copies those pages into `raw/notes/`. Needs a Notion MCP connector and admin rights to create a Notion integration (for the engine's server-side `ingest_from_notion` tool).
+**The step is optional.** Ask the user once whether to initialize it now; if they decline, skip to Step 8.5. They can add one later by re-running `mcbrain-setup` or running `local-research-db`.
 
-**The whole step is optional, but its sub-steps are not.** Once the user picks a backend in 8a, you MUST execute every sub-step under that branch in order before continuing to Step 8.5. In particular, the Notion branch's token-install sub-step (8f) is **required** for the engine's `ingest_from_notion` tool to work — skipping it leaves the user with the LLM-mediated fallback (every page body streamed through chat), which defeats the point of opting into Notion. Do not skip 8f because it looks long or because the user "already configured" Notion in chat — what matters is whether the token file is on disk.
+**8 — Initialize the local research tracker?**
 
-**8a — Choose research-tracker backend.**
+Ask the user a single yes/no question in plain conversation:
 
-**Call `AskUserQuestion` with this exact shape:**
+> "Initialize a local research tracker now? (yes/no) It's a JSONL file in your vault at `raw/research_tasks/tasks.jsonl` where you queue research questions for later batch processing. Recommended."
 
-```yaml
-questions:
-  - question: "How do you want to track research tasks for this McBrain?"
-    header: "Research tracker"
-    multiSelect: false
-    options:
-      - label: "Local (Recommended — no Notion needed)"
-        description: "Tracks tasks as a JSONL file in your vault under raw/research_tasks/. Zero dependencies, works offline."
-      - label: "Notion"
-        description: "Tracks tasks in a Notion database. Needs a Notion MCP connector and admin rights to create integrations."
-      - label: "Skip for now"
-        description: "Don't set one up. You can add one later by re-running mcbrain-setup or running local-research-db / notion-research-db."
-```
+Store the choice as `INIT_LOCAL_RESEARCH_TRACKER` ∈ {`yes`, `no`}.
 
-Store the choice as `RESEARCH_TRACKER_BACKEND` ∈ {`local`, `notion`, `none`}.
-
-- If `none` → skip to Step 9.
-- If `local` → run the **Local backend branch** below, then skip to Step 9 (none of the Notion sub-steps apply).
-- If `notion` → continue with the **Notion backend branch** below (sub-steps 8b–8g).
+- If `no` → skip to Step 8.5.
+- If `yes` → run the steps below, then continue at Step 8.5.
 
 ---
 
@@ -1090,20 +1074,20 @@ By the time setup reaches Step 8, **CLAUDE.md already exists** at `VAULT_PATH/CL
 
 Backend: none
 
-<HTML comments showing the local- and notion-formatted bodies>
+<HTML comments showing the local-formatted body>
 ```
 
-Step 8L (local branch) and Step 8e (Notion branch) both make a **targeted in-place edit** to this existing file — they do NOT rewrite it. Concretely: change the `Backend: none` line to `Backend: local` (or `Backend: notion`) and add the corresponding body lines immediately below it. Use the Edit tool against the existing file. Do not Write the whole CLAUDE.md from scratch.
+The yes-branch below makes a **targeted in-place edit** to this existing file — it does NOT rewrite it. Concretely: change the `Backend: none` line to `Backend: local` and add the corresponding body lines immediately below it. Use the Edit tool against the existing file. Do not Write the whole CLAUDE.md from scratch.
 
-Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query engine` section separately — it does not regenerate CLAUDE.md and does not touch the Research tracker section. So the three CLAUDE.md edit points (Step 3 = create from template + append Web Ingestion + Backup; Step 8L/8e = update Research tracker; Step 8.5 = patch Query engine) are non-overlapping and must each stay in their lane.
+Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query engine` section separately — it does not regenerate CLAUDE.md and does not touch the Research tracker section. So the three CLAUDE.md edit points (Step 3 = create from template + append Web Ingestion + Backup; Step 8 = update Research tracker; Step 8.5 = patch Query engine) are non-overlapping and must each stay in their lane.
 
-> **Common confusion to avoid:** the migrate step in Step 8.5 does **not** create CLAUDE.md. CLAUDE.md exists from Step 3. Migrate only adds one section (`## Query engine`) to a file that's already on disk. Don't try to be clever and write a "complete" CLAUDE.md in Step 8L that includes a pre-baked Query engine section — the migrate step will then either fail to find its marker or duplicate the section.
+> **Common confusion to avoid:** the migrate step in Step 8.5 does **not** create CLAUDE.md. CLAUDE.md exists from Step 3. Migrate only adds one section (`## Query engine`) to a file that's already on disk. Don't try to be clever and write a "complete" CLAUDE.md in Step 8 that includes a pre-baked Query engine section — the migrate step will then either fail to find its marker or duplicate the section.
 
 ---
 
-### Local backend branch (only if `RESEARCH_TRACKER_BACKEND == local`)
+### Initialization steps (only if `INIT_LOCAL_RESEARCH_TRACKER == yes`)
 
-**8L — Initialize the local research tracker.** Single sub-step, no Notion connector, no token, no MCP-engine call. Operate against the granted vault mount.
+No external connector, no token, no MCP-engine call. Operate against the granted vault mount.
 
 1. **Pick a default topic.** Derive a sensible default from `MCP_NAME` — strip the `mcbrain-` prefix and use what's left as the topic name (e.g. `mcbrain-finance` → topic `Finance`, slug `finance`; `mcbrain` alone → topic `General`, slug `general`). Confirm with the user in one short turn — they may want a different first topic.
 2. **Ensure the directory and file exist.** Create `<VAULT_PATH>/raw/research_tasks/` if missing. Create an empty `<VAULT_PATH>/raw/research_tasks/tasks.jsonl` if missing (an empty JSONL file is valid). Use the Write tool against the granted mount — do not run `touch` via Bash.
@@ -1122,7 +1106,7 @@ Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query eng
 
    Do **not** rewrite CLAUDE.md from scratch and do **not** add a `## Query engine` section here — that's Step 8.5's job.
 
-4. **No engine-MCP call needed.** The engine doesn't need to know about local trackers — they are just files in the vault, and the filesystem MCP already has access. (Compare the Notion branch below, which calls `enable_notion_for_vault` in Step 8.5.)
+4. **No engine-MCP call needed.** The engine doesn't need to know about local trackers — they are just files in the vault, and the filesystem MCP already has access.
 5. **Commit (Git strategy only).** If `BACKUP_STRATEGY == git`, present a single copy-paste fence (do not run git directly):
 
    ```bash
@@ -1134,188 +1118,7 @@ Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query eng
 
    If `google-drive` or `none`, no git operations are needed.
 
-After 8L, skip the rest of Step 8 entirely and continue at Step 8.5.
-
----
-
-### Notion backend branch (only if `RESEARCH_TRACKER_BACKEND == notion`)
-
-Sub-steps 8b–8g below all execute only when the backend choice in 8a was `notion`. Skip them entirely on the local or none branches.
-
-**8b — Check for a Notion MCP connector.** Enumerate available tools and look for ones that perform Notion operations. Match by *capability*, not exact name — many connectors exist (Anthropic's claude.ai Notion connector, Notion's official `@notionhq/notion-mcp-server`, community servers). The capabilities needed here are *search*, *create-database*, and *retrieve-database*; tool names typically contain `notion`, `search`, `database`, or fragments like `API-post-search` / `API-post-database`.
-
-If no Notion-like tools are present, tell the user:
-
-> "I don't see a Notion MCP connector. To pair this McBrain with a Notion research tracker, enable one (Anthropic's claude.ai Notion connector, Notion's official MCP server, or equivalent) and re-run this step. Skipping for now."
-
-Then continue to Step 9 — do not block setup on this. (Treat this as an effective `RESEARCH_TRACKER_BACKEND = none` for the rest of setup; the Notion-specific calls in Step 8.5 will be skipped.)
-
-**8b.1 — Existing or new database?**
-
-**Call `AskUserQuestion` with this exact shape:**
-
-```yaml
-questions:
-  - question: "How do you want to set up the Notion research tracker?"
-    header: "Notion DB"
-    multiSelect: false
-    options:
-      - label: "Use existing database"
-        description: "I already have a Notion DB I want to use. I'll paste the URL."
-      - label: "Create a new one"
-        description: "Spin up a new database with the standard schema (Task, Status, Priority, dates, Notes)."
-```
-
-Store the choice as `NOTION_DB_INTENT` ∈ {`yes-existing`, `yes-create`}. (The "Skip for now" option moved to 8a above as `RESEARCH_TRACKER_BACKEND == none`.)
-
-**8c — Existing database.** If they pick option 1, ask for the database URL and a friendly name (default to the database title). Use the Notion search/fetch tool to verify the URL resolves to a real database — if not, surface the error and ask the user to re-paste rather than guessing. Capture:
-
-- `NOTION_DB_NAME` — e.g., "AI Science Research Tracker"
-- `NOTION_DB_URL` — the database URL the user pasted
-- `NOTION_DB_ID` — extract from the URL (the 32-char hex segment, with or without dashes)
-
-**8d — Create a new database.** If they pick option 2, defer to the `notion-research-db` skill: it already knows how to confirm the parent page, create the database with the right schema, and return the URL/ID. Pass through the vault's research topic (default: the vault's name minus the `mcbrain-` prefix) and the `MCP_NAME` so it knows where to register. Capture the same three fields from its return.
-
-The `notion-research-db` skill will also write a registration entry — let it. Step 8e below either *adds* the entry (if the skill didn't, e.g., for the existing-database path) or *verifies* the entry the skill wrote.
-
-**8e — Register in CLAUDE.md.** The canonical location for registered companion databases is the `## Research tracker` section in `VAULT_PATH/CLAUDE.md`. CLAUDE.md was written in Step 3 from `references/claude-md-template.md`, so it already exists on disk with `Backend: none` in this section. Use the Edit tool to make a targeted in-place change: rewrite the `Backend: none` line to `Backend: notion` and append the body lines below it (do NOT rewrite the whole file; do NOT add a `## Query engine` section — Step 8.5 handles that separately):
-
-```markdown
-## Research tracker
-
-Backend: notion
-Notion databases:
-  - **<NOTION_DB_NAME>**
-    - URL: <NOTION_DB_URL>
-    - Database ID: <NOTION_DB_ID>
-    - Registered: <YYYY-MM-DD — look up today's date, do not guess>
-    - Notes: companion research tracker. The Notion-bridged ingest mode reads this entry to find which DB to drain.
-```
-
-If the section already exists (e.g., the `notion-research-db` skill wrote it during 8d), just verify the entry is present and correct — don't duplicate it.
-
-This is the location the `mcbrain` skill checks when running a Notion-bridged ingest. Older vaults registered their DB in a separate `## Notion companion databases` section (or, even older, in `wiki/notion-databases.md`); the ingest procedure falls back to those legacy paths if the `## Research tracker` section is empty or missing, so older vaults keep working.
-
-**8f — Install the Notion integration token (REQUIRED if `RESEARCH_TRACKER_BACKEND == notion`).**
-
-> 🔴 **Do not skip this sub-step.** If the user picked Notion in 8a, the
-> engine's `ingest_from_notion` tool needs a Notion integration token
-> sitting in a file on the host. No token = no server-side ingest =
-> every page body streams through chat on every future ingest.
-> Skipping 8f means the user's "I want Notion" answer in 8a is
-> half-applied — they get the CLAUDE.md registration (8e) but not the
-> working ingest path. Always run 8f for these users.
->
-> ⛔ **Security rule for this sub-step.** A Notion integration token is a
-> bearer credential — equivalent to a password. **Do not** ask the user
-> to paste it into chat, do not echo it, do not store it as a setup
-> variable, do not write it via the Write tool. Anything pasted into
-> chat is sent to Anthropic's servers and lives in the user's
-> conversation log. The right pattern: the user writes the token to a
-> file themselves in their own Terminal / PowerShell, the SKILL only
-> verifies the file is in place. The SKILL never sees the token.
-
-The `mcbrain-engine` MCP's server-side ingest tool (`ingest_from_notion`)
-calls Notion's REST API directly from the user's host — page bodies go
-straight to disk without passing through the LLM context. That requires
-a Notion integration token, which is *separate* from the Claude-Notion
-connector the user may already have configured.
-
-**Skip this sub-step entirely if a token file already exists** at the
-platform-resolved path below — the engine reuses one token for every
-Notion-enabled vault on the machine. Check by listing the directory
-through the granted mount:
-
-- macOS: `<application-support-mount>/mcbrain/notion-token`
-- Windows: `<appdata-mount>/mcbrain/notion-token`
-
-If you see `notion-token` in the listing, skip to step **8g**.
-
-If the file is absent, present this script to the user **as a copy-paste
-block** (don't run it from Cowork's Bash — it touches the host
-filesystem and reads from the host clipboard / TTY):
-
-> "I need a Notion **integration token** to copy your Notion pages
-> directly into McBrain — without sending them through me first.
-> Important: I should NOT see this token. You'll paste it into your
-> own Terminal where it stays on your machine.
->
-> **One-time setup (about 90 seconds):**
->
-> 1. Open <https://www.notion.so/my-integrations> in your browser
-> 2. Click **+ New integration** → name it `mcbrain` → workspace =
->    your workspace → **Submit**
-> 3. On the integration's page, copy the **Internal Integration Secret**
->    (starts with `secret_…` or `ntn_…`) to your clipboard
-> 4. Open your `<NOTION_DB_NAME>` Notion database → click the **`…`**
->    menu top-right → **Connections** → **Add connections** → pick
->    `mcbrain`. (Without this step the integration can't read the DB.)
-> 5. Run **one** of the blocks below in your Terminal / PowerShell.
->    The token never appears on screen and never enters this chat."
-
-For **macOS / Linux** (Terminal), paste-from-clipboard variant — assumes
-the user copied the token to clipboard in step 3:
-
-```bash
-mkdir -p ~/Library/Application\ Support/mcbrain && \
-pbpaste > ~/Library/Application\ Support/mcbrain/notion-token && \
-chmod 600 ~/Library/Application\ Support/mcbrain/notion-token && \
-echo "token saved"
-```
-
-(On Linux, swap `pbpaste` for `xclip -selection clipboard -o` or
-`wl-paste`, and the path for `~/.config/mcbrain/notion-token`.)
-
-If the user prefers not to use the clipboard, the type-it-in variant —
-token is hidden because of `read -s`:
-
-```bash
-mkdir -p ~/Library/Application\ Support/mcbrain && \
-read -s -p "Paste token, press enter: " TOK && \
-printf '%s' "$TOK" > ~/Library/Application\ Support/mcbrain/notion-token && \
-unset TOK && \
-chmod 600 ~/Library/Application\ Support/mcbrain/notion-token && \
-echo "token saved"
-```
-
-For **Windows** (PowerShell):
-
-```powershell
-$dir = "$env:APPDATA\mcbrain"
-New-Item -ItemType Directory -Path $dir -Force | Out-Null
-$tok = Read-Host -AsSecureString "Paste token, press enter"
-$plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tok))
-[IO.File]::WriteAllText("$dir\notion-token", $plain)
-Remove-Variable tok, plain
-"token saved"
-```
-
-After the user reports back ("token saved" or any confirmation), verify
-the file exists — but DO NOT read its contents:
-
-- Bash against the mount: `test -f <application-support-mount>/mcbrain/notion-token && echo present || echo missing`
-- Or just `ls -la <application-support-mount>/mcbrain/` and confirm `notion-token` is in the listing
-
-If the file is missing, ask the user to re-run the block from above. If
-present, continue to 8g — you're done with the token.
-
-**Never read the file's contents.** The engine reads it on demand at
-the path; you don't need to. If the user pastes the token by mistake,
-acknowledge that it's now in the conversation log and recommend they
-**rotate the token** (delete the integration at notion.so/my-integrations
-and create a new one) before continuing.
-
-**8g — Commit (Git strategy only).** If backup strategy is git, **do not run git directly** — by this point the filesystem MCP is loaded and direct git calls can leave a stale `.git/index.lock` (see CLAUDE.md's `## Backup → How Claude handles git for this vault`). Instead, **present** the commit block to the user in a copy-paste fence and ask them to run it in their terminal:
-
-```bash
-cd VAULT_PATH && git add CLAUDE.md && git commit -m "register: notion companion DB <NOTION_DB_NAME>" && git push
-```
-
-(The Notion token file is *not* in the vault and *not* in git — it
-lives under `~/Library/Application Support/mcbrain/` on macOS and
-`%APPDATA%\mcbrain\` on Windows, both per-machine config locations
-outside any vault.)
+After this, continue at Step 8.5.
 
 ---
 
@@ -1379,41 +1182,6 @@ and downloads the FastEmbed model. Tell the user:
 
 Surface the JSON output. The `legacy_layout_removed`, `rebuilt_for_mismatch`,
 and `claude_md_patched` flags make it visible what migrate actually did.
-
-### Enable Notion ingest (only if `RESEARCH_TRACKER_BACKEND == notion`)
-
-Skip this entire sub-section if the user picked `local` or `none` at
-Step 8a. The engine doesn't need to know about local trackers — they
-are just files in the vault, and the filesystem MCP already reads
-them. Calling `enable_notion_for_vault` for a non-Notion vault would
-be wrong.
-
-If Step 8a captured `notion` and Step 8f wrote a token, register
-this vault as Notion-enabled in the engine registry. Call the
-`mcbrain-engine` MCP's `enable_notion_for_vault` tool with:
-
-- `vault` = `MCP_NAME` (e.g. `mcbrain-ai-science`)
-- `database_id` = `NOTION_DB_ID` (captured in 8c or returned by 8d)
-
-Surface the JSON output. The returned `notion_enabled: true` and
-`notion_db_id` confirm the registry has been updated. From now on the
-user can ask Claude things like *"ingest the latest Notion pages into
-McBrain"* and the LLM will route that to `ingest_from_notion(vault=…)`,
-which copies pages directly to `<vault>/raw/notes/` without sending
-content through the chat context.
-
-If `enable_notion_for_vault` errors with *"vault is not registered"*,
-that means the migrate call above failed — fix migrate first.
-
-If it errors with *"Notion integration token not found"*, that means
-Step 8f's token write didn't land where expected. Re-check the path
-(macOS: `~/Library/Application Support/mcbrain/notion-token`,
-Windows: `%APPDATA%\mcbrain\notion-token`) and retry.
-
-If `RESEARCH_TRACKER_BACKEND` was `local` or `none`, don't call this —
-the vault stays without Notion config, and `ingest_from_notion` will
-refuse to run against it (which is what we want for local-backend or
-none-backend vaults).
 
 ### Recovery from first-launch timeout
 

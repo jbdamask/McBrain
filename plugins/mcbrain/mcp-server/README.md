@@ -28,7 +28,6 @@ the requirements. After first launch the runtime looks like:
 ├── mcbrain_engine.py     # the MCP server entry point
 ├── paths.py              # cross-platform path resolver (stdlib-only)
 ├── registry.py           # vault registry I/O
-├── notion.py             # Notion REST client + block-to-markdown converter (v2.1+)
 ├── schema.sql            # SQLite schema for <vault>/.mcbrain/index.db
 ├── requirements.txt      # mcp, fastembed, numpy
 └── venv/                 # created by launcher on first launch
@@ -37,9 +36,8 @@ the requirements. After first launch the runtime looks like:
 **Setup install rule.** The `mcbrain-setup` skill copies *every* top-level
 file from this directory (except this `README.md`) to `<runtime_root>/`.
 Don't maintain a hardcoded file list in the skill — adding a new module
-here (like `notion.py` in v2.1) should "just work" without a skill diff,
-provided the install procedure enumerates the directory rather than
-copying a fixed list.
+here should "just work" without a skill diff, provided the install
+procedure enumerates the directory rather than copying a fixed list.
 
 ## How the launcher works
 
