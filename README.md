@@ -5,11 +5,12 @@
 An easy-to-use tool for making personal knowledge bases in Claude Cowork. It's based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 
 > [!IMPORTANT]
-> **Upgrading from a Notion-paired vault?** Plugin 3.0.0 removes the Notion backend; the local JSONL research tracker is now the only supported option. No migration tooling is provided in 3.0.0 — manual switch only. Three paths:
+> **Upgrading to 4.0.0?** Plugin 4.0.0 removes the hybrid lexical+semantic search engine (the `mcbrain-engine` MCP and the `mcbrain-ops` skill). Query against the wiki now reads `wiki/index.md` and follows `[[wikilinks]]` instead of calling a search tool. No migration tooling is provided — your existing vaults will keep working, but the `## Query engine` section in their `CLAUDE.md` (and any references to `mcbrain-engine` MCP tools) becomes inert. Two paths:
 >
-> 1. **Downgrade** to a pre-3.0.0 plugin if you want to keep the Notion-bridged flow as-is.
-> 2. **Switch to local**: edit your vault's `CLAUDE.md` so `## Research tracker` reads `Backend: local`, then create a fresh `raw/research_tasks/tasks.jsonl` (the `local-research-db` skill can do this for you).
-> 3. **Work from the snapshot branch**: the pre-removal codebase is preserved at `origin/Notion`. Check it out if you need to keep running the Notion-paired workflow long-term.
+> 1. **Upgrade**: install 4.0.0 and accept the wiki-index-only Query flow. You may want to delete the `## Query engine` section and rewrite `### Query` in each vault's `CLAUDE.md` so Claude doesn't try to call tools that no longer exist; the templates in this version of `mcbrain-setup` show the new shape. You can also uninstall the `mcbrain-engine` MCP from your `claude_desktop_config.json` and delete the runtime directory at `~/Library/Application Support/mcbrain-engine/` (macOS) or `%LOCALAPPDATA%\mcbrain-engine\` (Windows).
+> 2. **Work from the snapshot branch**: the pre-removal codebase is preserved at `origin/query-engine`. Check it out if you want to keep running the hybrid search.
+>
+> **Upgrading from a Notion-paired vault?** Plugin 3.0.0 removed the Notion backend; the local JSONL research tracker is now the only supported option. The pre-removal codebase is preserved at `origin/Notion`.
 
 ## Why is it useful?
 Research used to be done by searching the internet for information, reading lots of pages, taking notes, then writing up a report. The more organized among us would create project folders to save their documents.
@@ -31,11 +32,10 @@ McBrain bundles several Skills that:
 - Create a research task database to help your knowledge base grow over time.
 - Execute up to five research tasks in parallel using subagents.
 - Ingest documents into the knowledge base.
-- Create a local search engine that allows Claude to quickly find information regardless of how big your McBrain gets.
 - Adds confidence scores to information sources.
 - Help you backup your McBrain to GitHub so you don't lose your knowledge base!
 
-Research tasks are tracked in a **local JSONL file** inside the vault (zero dependencies, works offline). The plugin bundles five cooperating skills so you can install everything in one click from Claude Desktop.
+Research tasks are tracked in a **local JSONL file** inside the vault (zero dependencies, works offline). The plugin bundles four cooperating skills so you can install everything in one click from Claude Desktop.
 
 The idea in one sentence: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent wiki that compounds over time. 
 
@@ -76,45 +76,6 @@ Each time you have a conversation with Claude about the contents of your McBrain
 ![Use](./img/mcbrain-ai-science.png)
 ![Ingest](./img/ingest.png)
 
-## Query engine
-
-Each McBrain vault ships with a built-in hybrid lexical + semantic query engine, provisioned automatically by `mcbrain-setup` (Step 8.5) and maintained by the `mcbrain-ops` skill. There's nothing to configure — `mcbrain-setup` creates a per-vault Python venv at `<vault>/.mcbrain/venv/`, installs the indexer dependencies, builds the initial search index, and patches your vault's `CLAUDE.md` to route queries through it.
-
-- **Lexical** uses ripgrep (`rg`) when available, with a `grep` / pure-Python fallback so the lexical path always works.
-- **Semantic** uses [FastEmbed](https://github.com/qdrant/fastembed)'s CPU-only ONNX embedding model (`BAAI/bge-small-en-v1.5`, 384 dims, ~30 MB). Queries like "cardiac event" still surface a page about *myocardial infarction* even though those words don't overlap.
-- **Hybrid ranking** uses Reciprocal Rank Fusion (RRF) over the two modalities.
-
-The embedding model lives in FastEmbed's shared cache (`~/.cache/fastembed/` on macOS/Linux, `%LOCALAPPDATA%\fastembed\` on Windows) so adding a second McBrain vault doesn't re-download it. Per-vault state — venv, index — lives at `<vault>/.mcbrain/` and is rebuildable from the wiki content. **No system-wide installs**: McBrain only detects whether `python3` and `rg` are available and surfaces install instructions if they aren't; everything else stays inside `<vault>/.mcbrain/`.
-
-Existing vaults that pre-date the engine get an automatic migration prompt the next time the `mcbrain` skill is invoked against them.
-
-### Fixing `mcbrain-engine` on macOS
-
-If Cowork's `mcbrain-engine` is failing with `Python 3.10+ required` or `ensurepip ... exit status 1`, run this:
-
-```bash
-# Install pyenv and Python 3.13
-brew install pyenv
-echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.zshrc
-echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"' >> ~/.zshrc
-echo 'eval "$(pyenv init - zsh)"' >> ~/.zshrc
-source ~/.zshrc
-pyenv install 3.13.13
-pyenv global 3.13.13
-
-# Make Cowork find it (it doesn't read your .zshrc)
-ln -sf "$(pyenv which python3.13)" /opt/homebrew/bin/python3
-
-# Clear mcbrain's broken venv and restart Cowork
-rm -rf "$HOME/Library/Application Support/mcbrain-engine/venv"
-```
-
-Quit Cowork (Cmd+Q) and relaunch. First start takes ~30 seconds to build the venv — if it errors, restart once more.
-
-**Intel Macs:** swap `/opt/homebrew/bin` for `/usr/local/bin`.
-
-**Why this works:** macOS's system Python is 3.9 (too old, can't replace). Homebrew's 3.13/3.14 bottles currently have a `libexpat` bug that breaks venv creation. pyenv builds Python from source, dodging the bug. The symlink is needed because GUI apps don't inherit your shell `PATH`.
-
 ## Research tracker
 
 Each McBrain vault has a **local research tracker** — JSONL rows in a single file inside the vault at `<vault>/raw/research_tasks/tasks.jsonl`. One topic per row (with a `topic_slug` field), all topics in one file. `mcbrain-setup` Step 8 initializes it, and the choice is recorded in the vault's `CLAUDE.md` under a `## Research tracker` section. The `local-research-runner` skill drains "To do" rows, runs research subagents in parallel, writes one markdown file per completed task to `<vault>/raw/notes/research-<topic-slug>-<task-id>.md`, and flips the row to "Done". The standard ingest flow then picks the new files up alongside Web Clipper / hand-drop notes; no special bridged-ingest mode.
@@ -128,16 +89,13 @@ To add a topic to the tracker, run the **`local-research-db`** skill (or just as
 
 ## Skills bundled in the plugin
 
-The `mcbrain` plugin contains five skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
+The `mcbrain` plugin contains four skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
 
 ### [`mcbrain-setup`](./plugins/mcbrain/skills/mcbrain-setup)
-One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, **provisions the per-vault query engine**, optionally walks through Obsidian and browser-extension setup (you can skip if you don't use Obsidian — McBrain works against the markdown vault directly), and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
+One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, optionally walks through Obsidian and browser-extension setup (you can skip if you don't use Obsidian — McBrain works against the markdown vault directly), and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
 
 ### [`mcbrain`](./plugins/mcbrain/skills/mcbrain)
 Day-to-day operating skill for McBrain. Handles ingesting sources into the vault, querying the wiki, filing synthesis pages, and linting. Supports multiple vaults (e.g. `mcbrain-finance`, `mcbrain-ai-science`) by mapping the user's request to the matching MCP filesystem server. Triggered by phrases like "ingest this", "save to mcbrain", "ask my brain", or any reference to the user's wiki / second brain.
-
-### [`mcbrain-ops`](./plugins/mcbrain/skills/mcbrain-ops)
-The query engine itself: a hybrid lexical + semantic search index over each vault's `wiki/`. Provisioned automatically by `mcbrain-setup` and called automatically by `mcbrain` after every wiki edit (to keep the index current) and at query time. You normally never invoke this directly — but it's the right skill if you ever need to rebuild the index, check its status, migrate an older vault, or remove the engine.
 
 ### [`local-research-db`](./plugins/mcbrain/skills/local-research-db)
 Initializes a local research-task tracker for a McBrain vault — the JSONL file at `<vault>/raw/research_tasks/tasks.jsonl` and the matching `## Research tracker` registration in CLAUDE.md. Use this when you want a research backlog that lives entirely inside the vault, no external services. Run it once per topic to register additional topics on an existing local tracker.
@@ -164,7 +122,6 @@ McBrain/
 │       └── skills/
 │           ├── mcbrain-setup/
 │           ├── mcbrain/
-│           ├── mcbrain-ops/
 │           ├── local-research-db/
 │           └── local-research-runner/
 ├── README.md
@@ -173,18 +130,15 @@ McBrain/
 
 ## Running tests
 
-The query engine has a pytest suite under [`tests/`](./tests/) covering pure-function unit tests, the CLAUDE.md patcher, the index lifecycle (rebuild / sync / status), search behavior (lexical cascade, semantic recall, hybrid query, lazy text fetch), and a full end-to-end lifecycle through the script's CLI. Organized following Kent C. Dodds' [Testing Trophy](https://kentcdodds.com/blog/the-testing-trophy-and-testing-classifications): the bulk of the investment lives in integration tests with a real SQLite DB and a real FastEmbed embedder.
+A small pytest suite under [`tests/`](./tests/) covers the local research tracker behavior.
 
 ```sh
 python3 -m venv .test-venv
-.test-venv/bin/pip install \
-  -r plugins/mcbrain/skills/mcbrain-ops/references/requirements.txt \
-  -r tests/requirements.txt
-
+.test-venv/bin/pip install -r tests/requirements.txt
 .test-venv/bin/python -m pytest tests/ -v
 ```
 
-First run downloads the FastEmbed model (~30 MB) into `~/.cache/fastembed/`. Subsequent runs reuse it and complete the full suite in a few seconds. See [`tests/README.md`](./tests/README.md) for layout and design notes.
+See [`tests/README.md`](./tests/README.md) for details.
 
 ## License
 
