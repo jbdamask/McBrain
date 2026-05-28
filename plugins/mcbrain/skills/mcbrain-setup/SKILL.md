@@ -1,6 +1,6 @@
 ---
 name: mcbrain-setup
-description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. THIS IS NOT A PLUGIN-BUILDER FLOW — the McBrain plugin is already built and shipped; this skill only provisions a new vault using the existing plugin. Do NOT render an intake card with project-type selectors ("Home maintenance", "Renovation & projects", etc.), do NOT ask "What will this McBrain be for?", do NOT ask "Which skills/commands would you like included?", and do NOT title the tab "Create new McBrain X variant" — those are plugin-builder behaviors and do not apply to McBrain setup. Use plain conversational Q&A; the complete list of inputs to gather is in the SKILL's "Required intake" section. Handles vault directory scaffolding, the CLAUDE.md schema, the filesystem MCP config block, and the mcbrain-engine MCP runtime install. Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema, mcbrain-engine MCP for hybrid query) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
+description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. THIS IS NOT A PLUGIN-BUILDER FLOW — the McBrain plugin is already built and shipped; this skill only provisions a new vault using the existing plugin. Do NOT render an intake card with project-type selectors ("Home maintenance", "Renovation & projects", etc.), do NOT ask "What will this McBrain be for?", do NOT ask "Which skills/commands would you like included?", and do NOT title the tab "Create new McBrain X variant" — those are plugin-builder behaviors and do not apply to McBrain setup. Use plain conversational Q&A; the complete list of inputs to gather is in the SKILL's "Required intake" section. Handles vault directory scaffolding, the CLAUDE.md schema, and the filesystem MCP config block. Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
 ---
 
 # McBrain Setup
@@ -64,7 +64,7 @@ Cowork's sandbox *can* read and write the user's host filesystem, but
 - `ls` / `find` / `cat` (read-only Bash on the mount) are fine — read
   paths are reliable.
 - MCP tools registered in Claude Desktop run **natively on the host**,
-  not in the sandbox — that's how the v2 query engine works.
+  not in the sandbox — they have full host filesystem access.
 
 ### Bash WRITE operations on a granted mount are unreliable — use Write tool
 
@@ -76,12 +76,8 @@ trivial directory creation:
 
 - Python `shutil.copy2()`, `cp`, `dd`, `tee >`, `cat > file`, `mv` from
   Bash to a mount path can **report success but never flush** to the
-  host filesystem. Tiny files sometimes land; larger files (engine
-  source, binaries, anything ~10KB+) frequently don't.
-- **SQLite databases on a mount, written from inside the sandbox, will
-  hit `disk I/O error`** — WAL-mode locking doesn't survive the FUSE
-  boundary. Never run `sqlite3` or any Python SQLite write from Bash
-  against a mounted path.
+  host filesystem. Tiny files sometimes land; larger writes frequently
+  don't.
 
 **Operational rule:**
 
@@ -92,14 +88,10 @@ trivial directory creation:
 | List directory (`ls`, `find`) | Bash is fine |
 | **Write a file** | **Write tool — never `cp` / `cat >` / `tee` / `shutil.copy` from Bash** |
 | **Edit a file** | **Edit tool — never `sed -i` / `awk` rewrite from Bash** |
-| Run SQLite (any write, even read-only with WAL) | Don't. The engine MCP handles all DB ops natively. |
-| Run Python scripts that touch the mount | Don't from Bash. If logic must run on the host, present the command for the user to run in their Terminal — or call the engine MCP, which runs natively. |
 
-If you find yourself reaching for `cp ${CLAUDE_PLUGIN_ROOT}/... <mount>/`
-or `python3 -c "shutil.copy(...)"` to install runtime files — **stop**.
-Read each source file with the Read tool, then write it to the
-destination with the Write tool. That's how Step 5.6 is specified, and
-it's the only path that reliably lands files on the host.
+If you find yourself reaching for `cp` or `python3 -c "shutil.copy(...)"`
+to write files into a mount — **stop**. Use the Write tool; it's the
+only path that reliably lands files on the host.
 
 ### Mental model
 
@@ -160,8 +152,7 @@ them, run setup end-to-end without going back to ask more.
 | 4 | `BACKUP_STRATEGY` ∈ {`git`, `google-drive`, `none`} | 2 | Three buttons, no other options. |
 | 5 | `GITHUB_USERNAME` *(only if BACKUP_STRATEGY == git)* | A1 | Used to construct `REPO_URL`. |
 | 6 | `gh` CLI installed *(only if BACKUP_STRATEGY == git)* | A2 | Ask the user to paste `gh --version` output. **Never** check via Bash — see the STOP block above. If not installed, present the install command for `OS_TYPE`. |
-| 7 | `PYTHON_OK` (Python 3.10+ on host) | 5.5 | Ask the user to paste `python3 --version` (Mac) or `python --version` (Windows). **Never** check via Bash. |
-| 8 | `INIT_LOCAL_RESEARCH_TRACKER` ∈ {`yes`, `no`} | 8 | Asks: "Initialize a local research tracker now? yes/no". Sets up a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl` for queuing research questions. Zero dependencies, works offline. Skipping is fine — the user can add one later by re-running `mcbrain-setup` or running `local-research-db`. |
+| 7 | `INIT_LOCAL_RESEARCH_TRACKER` ∈ {`yes`, `no`} | 8 | Asks: "Initialize a local research tracker now? yes/no". Sets up a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl` for queuing research questions. Zero dependencies, works offline. Skipping is fine — the user can add one later by re-running `mcbrain-setup` or running `local-research-db`. |
 
 **Do NOT ask any of the following**, even if it seems helpful:
 
@@ -178,10 +169,9 @@ home maintenance"), just acknowledge it and move on; don't store it
 as a setup variable or alter the vault structure based on it.
 
 **Ordering tip**: Items 1–4 can be asked up front in one or two short
-turns. Items 5–6 are conditional on git being chosen. Items 7 (Python
-check) and 8 (research-tracker init) can also be asked early — that
-lets the user install Python in parallel while later setup steps run,
-instead of blocking at Step 5.5 or Step 8.
+turns. Items 5–6 are conditional on git being chosen. Item 7
+(research-tracker init) can also be asked early instead of blocking at
+Step 8.
 
 ### How to ask: use `AskUserQuestion` for every multi-choice item
 
@@ -273,9 +263,9 @@ explicit:
 
 3. **MCP servers (including the filesystem MCPs Claude Desktop registers)
    run natively on the user's host machine**, not in the sandbox. They
-   have full host filesystem access. That's why the v2 query-engine
-   architecture works: the engine MCP runs natively when Claude Desktop
-   launches it, even though the chat session lives in a sandbox.
+   have full host filesystem access. That's why the filesystem MCP can
+   reach the user's vault: Claude Desktop launches it natively even though
+   the chat session lives in a sandbox.
 
 **Operational rule of thumb:**
 
@@ -369,23 +359,10 @@ equivalent here. When a later step refers to "App Support / config" or
 | User home | `~/` | `%USERPROFILE%\` (e.g. `C:\Users\<name>\`) |
 | Default Documents | `~/Documents/` | `%USERPROFILE%\Documents\` |
 | Claude Desktop config (registers MCPs) | `~/Library/Application Support/Claude/claude_desktop_config.json` | `%APPDATA%\Claude\claude_desktop_config.json` |
-| McBrain engine runtime install dir | `~/Library/Application Support/mcbrain-engine/` | `%LOCALAPPDATA%\mcbrain-engine\` |
-| McBrain vault registry | `~/Library/Application Support/mcbrain/vaults.json` | `%APPDATA%\mcbrain\vaults.json` |
-| Parent directory to grant for engine + Claude config | `~/Library/Application Support/` | grant `%APPDATA%\` AND `%LOCALAPPDATA%\` separately (different parents on Windows) |
+| Parent directory to grant for Claude config | `~/Library/Application Support/` | `%APPDATA%\` |
 | Hidden-folder reveal in folder picker | Cmd-Shift-. | Already visible; navigate via address bar |
 | Type-a-path shortcut in folder picker | Cmd-Shift-G | Address bar (Ctrl-L in Explorer) |
-| Python install command | `xcode-select --install` (recommended) or python.org | Microsoft Store ("Python 3.12") or python.org installer (check "Add python.exe to PATH") |
-| ripgrep install | `brew install ripgrep` | `winget install BurntSushi.ripgrep.MSVC` (or `scoop install ripgrep`) |
 | GitHub CLI install | `brew install gh` | `winget install --id GitHub.cli` |
-| Venv interpreter inside venv (set automatically by launcher) | `<venv>/bin/python` | `<venv>\Scripts\python.exe` |
-| Engine launcher path (used in MCP `command`) | `~/Library/Application Support/mcbrain-engine/launcher.py` | `%LOCALAPPDATA%\mcbrain-engine\launcher.py` |
-
-**Important Windows note:** the engine runtime lives under `%LOCALAPPDATA%\`
-(per-machine cache) but the Claude Desktop config and registry live under
-`%APPDATA%\` (per-user roaming). On Windows the two are *different
-directories* — you'll need two separate folder grants in Step 5 / 5.6
-rather than one. On macOS, both are under `~/Library/Application Support/`
-so a single grant covers everything.
 
 ---
 
@@ -683,8 +660,6 @@ should contain:
 .DS_Store
 .obsidian/workspace*
 .obsidian/cache
-.mcbrain/index.db
-.mcbrain/index.db-*
 __pycache__/
 ```
 
@@ -702,13 +677,6 @@ git push -u origin main
 
 Ask the user to confirm the push succeeded. If it fails, check that
 `gh auth login` completed correctly and that `REPO_URL` is reachable.
-
-The gitignore excludes the per-vault `.mcbrain/index.db` and its SQLite
-WAL/SHM sidecars — those are rebuildable from `wiki/` content. Nothing else
-under `.mcbrain/` exists in the v2 layout: the engine source and venv live
-at the platform-resolved runtime root (see Step 5.6), not per-vault. A
-fresh clone on a new machine just runs `mcbrain-setup` once to install the
-runtime, then queries work immediately.
 
 ---
 
@@ -746,11 +714,8 @@ user's `OS_TYPE`:
 Call **`mcp__cowork__request_cowork_directory`** with the platform-correct
 parent:
 
-- macOS: `~/Library/Application Support/` (one grant covers both Step 5 and
-  Step 5.6's engine install — same parent dir on Mac)
-- Windows: `%APPDATA%\Claude\` (specific to this step; Step 5.6 will
-  request a separate grant for `%LOCALAPPDATA%\` since they're different
-  parents on Windows)
+- macOS: `~/Library/Application Support/`
+- Windows: `%APPDATA%\Claude\`
 
 If `mcp__cowork__request_cowork_directory` is unavailable, fall back to
 telling the user to click **+** (or 'Add folder') and grant access to
@@ -789,221 +754,6 @@ Merge the following entry into `mcpServers` (use the actual `MCP_NAME` and
 Show the user the final config before writing it and confirm. Then write
 via Edit tool — do NOT shell out to `cat > config.json` or similar from
 Cowork's Bash; that would write into the sandbox, not the user's host.
-
----
-
-## Step 5.5: Confirm Python prerequisite
-
-The query engine needs Python 3.10+ on the user's machine. **Do not try
-to detect this from the sandbox** — sandbox python ≠ user's Python.
-Just ask once and trust the answer. The exact prompt depends on
-`OS_TYPE` from Step 0.
-
-### macOS prompt
-
-> "Quick prerequisite check: McBrain's query engine needs **Python 3.10+
-> installed on your Mac**. (One-time — every McBrain on this machine
-> reuses the same Python.)
->
-> Run in **Terminal**:
->
-> ```
-> python3 --version
-> ```
->
-> - If it prints `Python 3.10` or higher → reply 'yes', we'll move on.
-> - If it errors or prints something older → install with `xcode-select
->   --install` (recommended, gets Python + dev tools) or download from
->   [python.org/downloads](https://www.python.org/downloads/). Reply
->   when done.
->
-> (`ripgrep` is optional but makes search faster: `brew install ripgrep`.
-> Setup continues either way.)"
-
-### Windows prompt
-
-> "Quick prerequisite check: McBrain's query engine needs **Python 3.10+
-> installed on your PC**, with `python` on your PATH. (One-time — every
-> McBrain on this machine reuses the same Python.)
->
-> Run in **PowerShell or Command Prompt**:
->
-> ```
-> python --version
-> ```
->
-> - If it prints `Python 3.10` or higher → reply 'yes', we'll move on.
-> - If `python` isn't recognized, or prints something older → easiest
->   path is **Microsoft Store → search for 'Python 3.12' → Install**
->   (auto-adds to PATH). Or use the python.org installer and **check
->   'Add python.exe to PATH' during install**. Reply when done.
->
-> (`ripgrep` is optional but makes search faster:
-> `winget install BurntSushi.ripgrep.MSVC`. Setup continues either way.)"
-
-Wait for their reply. Trust it. If they're wrong, the launcher will fail
-with a clear stderr message at first MCP call (Step 8.5) and they can
-install Python and retry. Do not run `python3 --version` from Bash to
-"verify" — it tells you nothing useful.
-
----
-
-## Step 5.6: Install the engine runtime + register the MCP
-
-Install the engine source files and add the MCP entry to Claude Desktop's
-config so the engine launches natively next time Claude Desktop starts.
-
-### What gets installed where
-
-Pick the right paths for `OS_TYPE`:
-
-- **Engine runtime files** copied to:
-  - macOS: `~/Library/Application Support/mcbrain-engine/`
-  - Windows: `%LOCALAPPDATA%\mcbrain-engine\`
-
-  Files copied: `launcher.py`, `mcbrain_engine.py`, `paths.py`, `registry.py`,
-  `schema.sql`, `requirements.txt`. (No venv yet — the launcher creates that
-  on first MCP launch in Step 8.5.)
-
-- **MCP registration** added to `mcpServers.mcbrain-engine` in:
-  - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-  - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-
-### Get the right folder grant
-
-- **macOS**: the `~/Library/Application Support/` grant from Step 5 already
-  covers `mcbrain-engine/` (same parent). Verify the grant is still active
-  by listing the mount; re-grant the same folder if the user revoked it.
-- **Windows**: `%APPDATA%\` (Step 5) and `%LOCALAPPDATA%\` are *different*
-  parents. Call `mcp__cowork__request_cowork_directory` again with
-  `%LOCALAPPDATA%\` so you can write to `%LOCALAPPDATA%\mcbrain-engine\`.
-  (Fallback: ask the user to grant `%LOCALAPPDATA%\` via the + button.)
-  Then verify by listing the new mount.
-
-### Copy the engine runtime files
-
-> **Sandbox reminder (this is where the SKILL has broken before)**:
-> install these files using **Read + Write tools only** — never `cp`,
-> `shutil.copy*`, `cat > file`, `tee`, `mv`, or any other Bash-side
-> write to the mount. Bash writes through Cowork's FUSE bridge can
-> silently fail to flush, leaving files that look fine in `ls -l` but
-> are truncated, missing, or invisible to the host. Tiny files
-> sometimes land; engine source files (~10–40 KB+) often don't. The
-> Write tool runs natively on the host and is the only reliable path.
-
-**Don't copy from a hardcoded file list — enumerate the plugin's
-`mcp-server/` directory and copy every file at its top level.** The
-plugin's runtime surface grows over time; a hardcoded list silently
-misses new modules and the engine fails at runtime with an
-`ImportError`. Instead:
-
-1. **List the source directory.** Run `ls
-   ${CLAUDE_PLUGIN_ROOT}/mcp-server/` (Bash on the plugin path is
-   safe — that's not a Cowork mount, it's the plugin install).
-   You should see a flat directory of files:
-   - `*.py` modules (`launcher.py`, `mcbrain_engine.py`, `paths.py`,
-     `registry.py`, plus any future additions)
-   - `schema.sql`
-   - `requirements.txt`
-   - `README.md` (skip — runtime doesn't need it)
-   - **No subdirectories** at this level. If `ls` shows any other
-     subdir besides what's listed above, surface it to the user and
-     ask before copying.
-2. **For each `.py` file, plus `schema.sql` and `requirements.txt`**:
-   Read with the Read tool from `${CLAUDE_PLUGIN_ROOT}/mcp-server/<name>`,
-   write with the Write tool to
-   `<application-support-mount>/mcbrain-engine/<name>`. Skip
-   `README.md` — runtime doesn't need it.
-
-Creating the destination directory `<application-support-mount>/mcbrain-engine/`
-with Bash `mkdir -p` against the mount path is fine — `mkdir` is small
-and idempotent and doesn't trigger the FUSE flush problem. The danger
-is *file-content* writes, not directory creation.
-
-After all files are written, verify by **counting and size-matching
-against the source directory**:
-
-```bash
-ls -1 ${CLAUDE_PLUGIN_ROOT}/mcp-server/ | grep -vE '^(README\.md|venv|__pycache__)$' | sort
-ls -1 <application-support-mount>/mcbrain-engine/ | grep -vE '^(venv|__pycache__)$' | sort
-```
-
-The two listings should match exactly (same filenames, same count).
-Then `ls -l` both directories and **check the byte sizes match
-file-by-file** — a 0-byte or truncated `mcbrain_engine.py` is the
-classic FUSE-flush failure mode, and a missing file is the bug we
-saw with module additions in earlier setups.
-If any size is wrong or any file is missing, re-run the Write for that
-file — do not try to "fix" it with Bash.
-
-### Register the MCP entry
-
-Read the platform-correct config file (path from the table above). If the
-file doesn't exist (fresh Claude Desktop install), create a minimal one:
-
-```json
-{
-  "mcpServers": {}
-}
-```
-
-Merge `mcbrain-engine` into `mcpServers`. **The `command` and `args`
-values are platform-specific — use the matching pair below**:
-
-**macOS:**
-```json
-"mcbrain-engine": {
-  "command": "python3",
-  "args": ["/Users/<USER>/Library/Application Support/mcbrain-engine/launcher.py"]
-}
-```
-Replace `<USER>` with the user's macOS username (ask if you don't know,
-or read from the granted mount path).
-
-**Windows:**
-```json
-"mcbrain-engine": {
-  "command": "python",
-  "args": ["C:\\Users\\<USER>\\AppData\\Local\\mcbrain-engine\\launcher.py"]
-}
-```
-Replace `<USER>` with the user's Windows username. Note the **double
-backslashes** in the JSON `args` value — that's required JSON escaping;
-`json.dump` handles this automatically when you write a Python string.
-On Windows, prefer `python` over `python3` since `python3` is not always
-on PATH.
-
-Use `json.dump` semantics — preserve existing entries; only add or update
-`mcbrain-engine`. If `mcbrain-engine` already exists with matching
-`command` + `args`, it's a no-op.
-
-Show the user the final config block before writing, and confirm.
-
-### Idempotency notes
-
-- Re-running setup against a machine that already has the runtime: the file
-  copies overwrite (which is fine — they're identical or newer); the MCP
-  entry is detected as already-correct and left alone.
-- Plugin updates: re-run **just Step 5.6** to refresh the runtime files. The
-  launcher auto-detects mismatches and rebuilds the venv if needed.
-
-### Important: restart Claude Desktop
-
-Tell the user explicitly:
-
-> "I've installed the runtime files and registered the engine. **You need
-> to quit and reopen Claude Desktop now** for the new MCP entry to take
-> effect.
->
-> - **macOS**: quit from the menu bar (Claude → Quit Claude, or Cmd-Q) —
->   closing the window isn't enough.
-> - **Windows**: right-click the Claude icon in the system tray and choose
->   Exit — closing the window isn't enough.
->
-> The first time you ask McBrain a question after restarting, the engine
-> will spend ~30 seconds creating its Python virtual environment and
-> downloading the FastEmbed embedding model (~30 MB). After that, every
-> question is fast. We'll trigger that warmup deliberately in Step 8.5."
 
 ---
 
@@ -1048,7 +798,7 @@ McBrain pairs nicely with a local research tracker: a backlog where the user que
 
 The tracker is a JSONL file inside the vault at `raw/research_tasks/tasks.jsonl`. Zero external dependencies, works offline.
 
-**The step is optional.** Ask the user once whether to initialize it now; if they decline, skip to Step 8.5. They can add one later by re-running `mcbrain-setup` or running `local-research-db`.
+**The step is optional.** Ask the user once whether to initialize it now; if they decline, skip to Step 9. They can add one later by re-running `mcbrain-setup` or running `local-research-db`.
 
 **8 — Initialize the local research tracker?**
 
@@ -1058,8 +808,8 @@ Ask the user a single yes/no question in plain conversation:
 
 Store the choice as `INIT_LOCAL_RESEARCH_TRACKER` ∈ {`yes`, `no`}.
 
-- If `no` → skip to Step 8.5.
-- If `yes` → run the steps below, then continue at Step 8.5.
+- If `no` → skip to Step 9.
+- If `yes` → run the steps below, then continue at Step 9.
 
 ---
 
@@ -1079,15 +829,11 @@ Backend: none
 
 The yes-branch below makes a **targeted in-place edit** to this existing file — it does NOT rewrite it. Concretely: change the `Backend: none` line to `Backend: local` and add the corresponding body lines immediately below it. Use the Edit tool against the existing file. Do not Write the whole CLAUDE.md from scratch.
 
-Step 8.5's `migrate` tool runs **after** Step 8 and patches in the `## Query engine` section separately — it does not regenerate CLAUDE.md and does not touch the Research tracker section. So the three CLAUDE.md edit points (Step 3 = create from template + append Web Ingestion + Backup; Step 8 = update Research tracker; Step 8.5 = patch Query engine) are non-overlapping and must each stay in their lane.
-
-> **Common confusion to avoid:** the migrate step in Step 8.5 does **not** create CLAUDE.md. CLAUDE.md exists from Step 3. Migrate only adds one section (`## Query engine`) to a file that's already on disk. Don't try to be clever and write a "complete" CLAUDE.md in Step 8 that includes a pre-baked Query engine section — the migrate step will then either fail to find its marker or duplicate the section.
-
 ---
 
 ### Initialization steps (only if `INIT_LOCAL_RESEARCH_TRACKER == yes`)
 
-No external connector, no token, no MCP-engine call. Operate against the granted vault mount.
+No external connector, no token needed. Operate against the granted vault mount.
 
 1. **Pick a default topic.** Derive a sensible default from `MCP_NAME` — strip the `mcbrain-` prefix and use what's left as the topic name (e.g. `mcbrain-finance` → topic `Finance`, slug `finance`; `mcbrain` alone → topic `General`, slug `general`). Confirm with the user in one short turn — they may want a different first topic.
 2. **Ensure the directory and file exist.** Create `<VAULT_PATH>/raw/research_tasks/` if missing. Create an empty `<VAULT_PATH>/raw/research_tasks/tasks.jsonl` if missing (an empty JSONL file is valid). Use the Write tool against the granted mount — do not run `touch` via Bash.
@@ -1104,10 +850,9 @@ No external connector, no token, no MCP-engine call. Operate against the granted
          - Notes: companion local research tracker for this topic.
      ```
 
-   Do **not** rewrite CLAUDE.md from scratch and do **not** add a `## Query engine` section here — that's Step 8.5's job.
+   Do **not** rewrite CLAUDE.md from scratch.
 
-4. **No engine-MCP call needed.** The engine doesn't need to know about local trackers — they are just files in the vault, and the filesystem MCP already has access.
-5. **Commit (Git strategy only).** If `BACKUP_STRATEGY == git`, present a single copy-paste fence (do not run git directly):
+4. **Commit (Git strategy only).** If `BACKUP_STRATEGY == git`, present a single copy-paste fence (do not run git directly):
 
    ```bash
    cd VAULT_PATH && \
@@ -1118,94 +863,7 @@ No external connector, no token, no MCP-engine call. Operate against the granted
 
    If `google-drive` or `none`, no git operations are needed.
 
-After this, continue at Step 8.5.
-
----
-
-## Step 8.5: Trigger first MCP launch + provision this vault's index
-
-After Step 5.6 the user has restarted Claude Desktop. Now we want to:
-1. Trigger the launcher's one-time bootstrap (creates the venv + downloads
-   the FastEmbed model). This runs natively on the user's host machine via
-   Claude Desktop.
-2. Call the `mcbrain-engine` MCP's `migrate` tool to register this vault and
-   patch its CLAUDE.md.
-
-Both happen in one shot when we make the first `migrate` MCP call — the
-launcher bootstraps before the tool returns.
-
-### Confirm the user has restarted
-
-Ask:
-
-> "Did you quit and reopen Claude Desktop after Step 5.6? The new MCP entry
-> only takes effect after a full restart (quit from menu bar — closing the
-> window isn't enough)."
-
-If they say no, wait. Don't call the migrate tool until they confirm.
-
-### Call the migrate tool
-
-Once they confirm restart, in this **same** Cowork session, the
-`mcbrain-engine` MCP should now be loaded. Verify by listing available MCP
-tools — `query`, `index_sync`, `migrate`, etc. should appear.
-
-Call the `migrate` tool with:
-- `vault_path` = `VAULT_PATH` (absolute path confirmed in Step 1)
-- `vault_name` = `MCP_NAME` (e.g. `mcbrain-ai-science`)
-
-**This first call takes ~30 seconds** while the launcher creates the venv
-and downloads the FastEmbed model. Tell the user:
-
-> "Calling the migrate tool now. The first call will take ~30 seconds while
-> the engine sets itself up — Python virtual environment creation, fastembed
-> + numpy + mcp install (~50 MB of pip downloads), and the FastEmbed
-> embedding model (~30 MB). Subsequent calls are instant. If Claude Desktop
-> shows a 'failed to connect to MCP' error during this first call, that's
-> the connection timing out during bootstrap — quit and reopen Claude
-> Desktop once more, the venv will be ready and the second attempt will be
-> instant."
-
-### What `migrate` does
-
-1. Ensures `VAULT_PATH/.mcbrain/` exists.
-2. If a legacy PR #4 `.mcbrain/{bin,venv}/` is present (carry-over from an
-   older McBrain install), reads `index.db` meta. If the embedding model+dim
-   match, the index is preserved and `bin/`/`venv/` directories are removed.
-   Otherwise the index is wiped for rebuild.
-3. Writes/updates the vault's entry in the platform-resolved registry
-   (`~/Library/Application Support/mcbrain/vaults.json` on macOS,
-   `%APPDATA%\mcbrain\vaults.json` on Windows).
-4. Patches `VAULT_PATH/CLAUDE.md` with the MCP-flavored Query operation and
-   the `## Query engine` section (mode marker `lexical+semantic (mcp)`).
-5. Runs an initial `index_sync`. Empty wiki → timestamps the meta table.
-
-Surface the JSON output. The `legacy_layout_removed`, `rebuilt_for_mismatch`,
-and `claude_md_patched` flags make it visible what migrate actually did.
-
-### Recovery from first-launch timeout
-
-If Claude Desktop shows "failed to connect to MCP" during the first call:
-- The launcher is still running in the background, finishing the pip install
-- Wait ~60 seconds, then quit and reopen Claude Desktop
-- In the new session, retry the migrate call — it'll skip the bootstrap and
-  succeed instantly
-
-If the launcher genuinely failed (network, missing Python), Claude Desktop's
-MCP debug panel will show the launcher's stderr output, which says exactly
-what went wrong. Surface that to the user and walk through the fix
-(install Python, retry, etc.).
-
-### Commit (Git strategy only)
-
-If the backup strategy is git, present a copy-paste block:
-
-```bash
-cd VAULT_PATH && git add CLAUDE.md && git commit -m "init: provision query engine" && git push
-```
-
-(Note: `.mcbrain/index.db` is gitignored per Step 3 — only the patched
-CLAUDE.md needs committing.)
+After this, continue at Step 9.
 
 ---
 
@@ -1239,13 +897,6 @@ Claude will read the source, discuss key points, write wiki pages in `wiki/`, up
 **Query**: `"Ask McBrain: [question]. Cite the pages you used."`
 **Lint**: `"Lint McBrain. Find contradictions, orphan pages, stale claims, missing cross-references."`
 **Save a query answer**: `"File your answer as a new wiki page at wiki/[topic].md"`
-
-**Query-engine maintenance** (rare — the index normally stays current automatically because every wiki write runs `index_sync`):
-
-- *Full reindex* if the embedding model or schema changes, or if results stop making sense: call the `mcbrain-engine` MCP's `index_rebuild` tool (the `mcbrain-ops` skill knows the right invocation).
-- *Index health check*: call the `mcbrain-engine` MCP's `index_status` tool — returns doc count, last sync time, and the active embedding model.
-- *Remove a vault's index*: call the `mcbrain-engine` MCP's `uninstall` tool with `force=true` — deletes `<vault>/.mcbrain/` and the registry entry. Wiki and raw content are untouched. The shared engine runtime is left alone.
-- *Remove the engine runtime entirely*: see the "Nuke and reinstall" section of `plugins/mcbrain/mcp-server/README.md`.
 
 ---
 

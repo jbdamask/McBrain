@@ -31,9 +31,8 @@ End-to-end bootstrap for a new vault:
 - **Name and locate** — picks the vault name (`mcbrain-<topic>`) and filesystem path
 - **Backup strategy** — Git + GitHub (with remote repo created up front), Google Drive, or none
 - **Scaffold** — creates `raw/`, `wiki/`, and the starter files (`index.md`, `log.md`, `overview.md`, `CLAUDE.md`)
-- **CLAUDE.md** — writes the vault's source-of-truth config, including the Web Ingestion Routing, Backup, and Query engine sections
+- **CLAUDE.md** — writes the vault's source-of-truth config, including the Web Ingestion Routing and Backup sections
 - **MCP config** — merges the filesystem MCP block into `claude_desktop_config.json`
-- **Query engine** — provisions a per-vault Python venv at `<vault>/.mcbrain/venv/`, installs the indexer dependencies, builds the initial search index. Hybrid lexical + semantic, no system-wide installs. Detects `python3` and `rg` and surfaces install instructions if missing (does not run a system package manager itself).
 - **Obsidian + extensions** — walks through Obsidian vault setup, Claude in Chrome, and Obsidian Web Clipper
 - **Verify** — confirms Claude can read `CLAUDE.md` through the new MCP
 
