@@ -364,6 +364,7 @@ equivalent here. When a later step refers to "App Support / config" or
 | Hidden-folder reveal in folder picker | Cmd-Shift-. | Already visible; navigate via address bar |
 | Type-a-path shortcut in folder picker | Cmd-Shift-G | Address bar (Ctrl-L in Explorer) |
 | GitHub CLI install | `brew install gh` | `winget install --id GitHub.cli` |
+| git install | `xcode-select --install` (or `brew install git`) | `winget install --id Git.Git` |
 | Node.js install | `brew install node` (or download from [nodejs.org](https://nodejs.org)) | `winget install --id OpenJS.NodeJS` (or download from [nodejs.org](https://nodejs.org)) |
 
 ---
@@ -382,15 +383,37 @@ them later.
 | **Node.js** | the vault's filesystem MCP (`npx` launches it) | **Always** | `node --version` |
 | **git** + **GitHub CLI (`gh`)** | the Git + GitHub backup option (recommended) | Only if you pick Git backup in Step 2 | `git --version` / `gh --version` |
 
-Present this to the user roughly as:
+**Include the install commands for the user's detected `OS_TYPE` (from
+Step 0) in your announcement** — you already know whether they're on Mac or
+Windows, so give the exact command rather than making them hunt for it. Show
+**only** their OS's column; don't dump both.
 
-> "Before we start, here's what McBrain needs on your computer. **Node.js is
-> required for every McBrain** — it runs the connector that lets me read and
-> write your vault. **git and the GitHub CLI are only needed if you choose
-> the Git + GitHub backup option** (my recommendation) when we get to the
-> backup step. You can install those now if you already know you want Git
-> backup, or wait and I'll walk you through it then. Let's confirm Node.js
-> first since it's mandatory."
+| Tool | Install on macOS | Install on Windows |
+|---|---|---|
+| **Node.js** | `brew install node` (or download from [nodejs.org](https://nodejs.org)) | `winget install --id OpenJS.NodeJS` (or [nodejs.org](https://nodejs.org)) |
+| **git** | `xcode-select --install` (or `brew install git`) | `winget install --id Git.Git` |
+| **GitHub CLI (`gh`)** | `brew install gh` | `winget install --id GitHub.cli` |
+
+*(macOS note: `brew` requires [Homebrew](https://brew.sh) — if `brew` isn't
+found, point the user there first. Windows `winget` ships with Windows
+10/11.)*
+
+Present this to the user roughly as (substituting their OS's commands):
+
+> "Before we start, here's what McBrain needs on your computer — you're on
+> **{OS_TYPE}**, so here are the exact install commands if anything's missing.
+>
+> **Node.js (required for every McBrain)** — runs the connector that lets me
+> read and write your vault. Check with `node --version`; install with
+> `{node install command for OS_TYPE}`.
+>
+> **git + GitHub CLI (only if you choose Git + GitHub backup**, which I
+> recommend, at the backup step) — check with `git --version` and
+> `gh --version`; install with `{git + gh install commands for OS_TYPE}`.
+>
+> You can install the Git tools now if you already know you want that backup,
+> or wait and I'll walk you through it then. Let's confirm Node.js first since
+> it's mandatory."
 
 **You cannot detect any of these from inside Cowork.** The Bash tool runs in
 the Linux sandbox, not on the user's host, so running `node --version`
