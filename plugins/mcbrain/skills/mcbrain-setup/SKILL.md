@@ -368,23 +368,41 @@ equivalent here. When a later step refers to "App Support / config" or
 
 ---
 
-## Step 0.5: Confirm system requirements
+## Step 0.5: Prerequisites — announce everything up front
 
-McBrain needs one tool installed on the user's host that does **not** come
-with Claude Desktop: **Node.js**. The filesystem MCP server that gives
-Claude read/write access to the vault (`@modelcontextprotocol/server-filesystem`,
-configured in Step 5) is launched by Claude Desktop with `npx`, which ships
-with Node. **Without Node.js, the vault MCP will not start and McBrain will
-not work** — so confirm it *before* building anything.
+**Front-load the full prerequisite picture before building anything.** The
+user should learn *everything* McBrain might need at the start — not
+discover a missing tool three steps in. Show them the table below in full,
+even the conditional items, so they can install ahead and nothing blocks
+them later.
 
-**You cannot detect this from inside Cowork.** The Bash tool runs in the
-Linux sandbox, not on the user's host, so running `node --version` yourself
-tells you nothing about their machine (and may report a false positive from
-the sandbox). Do **not** run the check yourself. Instead, hand the user the
-check command and trust their answer — the same pattern the GitHub CLI uses.
+| Tool | Needed for | Required? | Check command |
+|---|---|---|---|
+| **Claude Desktop (Cowork)** | running this setup | Always | (you're already in it) |
+| **Node.js** | the vault's filesystem MCP (`npx` launches it) | **Always** | `node --version` |
+| **git** + **GitHub CLI (`gh`)** | the Git + GitHub backup option (recommended) | Only if you pick Git backup in Step 2 | `git --version` / `gh --version` |
 
-Present this to the user (it's the same command on Mac and Windows; they run
-it in **Terminal** on macOS or **PowerShell** on Windows):
+Present this to the user roughly as:
+
+> "Before we start, here's what McBrain needs on your computer. **Node.js is
+> required for every McBrain** — it runs the connector that lets me read and
+> write your vault. **git and the GitHub CLI are only needed if you choose
+> the Git + GitHub backup option** (my recommendation) when we get to the
+> backup step. You can install those now if you already know you want Git
+> backup, or wait and I'll walk you through it then. Let's confirm Node.js
+> first since it's mandatory."
+
+**You cannot detect any of these from inside Cowork.** The Bash tool runs in
+the Linux sandbox, not on the user's host, so running `node --version`
+yourself tells you nothing about their machine (and may report a false
+positive from the sandbox). Do **not** run these checks yourself. Hand the
+user the command and trust their answer.
+
+### Confirm Node.js now (mandatory gate)
+
+**Without Node.js, the vault MCP will not start and McBrain will not work**,
+so this one must pass before you continue. Have the user run, in **Terminal**
+(macOS) or **PowerShell** (Windows) — same command on both:
 
 ```
 node --version
@@ -412,11 +430,18 @@ questions:
   `node --version` to confirm, then continue. Don't try to install Node
   yourself via the Bash tool — that installs into the sandbox, not the host.
 
-> **Other tools are conditional, not universal.** `git` and the GitHub CLI
-> (`gh`) are only needed if the user picks the **Git + GitHub** backup
-> strategy in Step 2 — that step handles checking and installing them, so
-> don't ask about them here unless the user has already said they want Git
-> backup. Node.js is the only requirement every McBrain vault needs.
+### git + GitHub CLI — announced now, gated in Step 2
+
+You've now told the user about `git` and `gh` up front (the table above), so
+there are no surprises later. They're **conditional**, so don't force a check
+here:
+
+- If the user already says they want **Git + GitHub** backup, offer to
+  confirm `git --version` and `gh --version` now (same trust-the-user pattern
+  as Node.js) so installs happen before the flow proper.
+- Otherwise, leave them be — **Step 2, Option A** is the authoritative gate
+  that checks, installs, and authenticates `gh` once the backup choice is
+  made. Node.js remains the only tool every McBrain vault needs.
 
 ---
 
