@@ -141,6 +141,10 @@ python3 -m venv .test-venv
 
 See [`tests/README.md`](./tests/README.md) for details.
 
+## How to add and ingest articles using Obsidian Web Clipper
+
+[Video tutorial](https://youtu.be/tSsl4yfbxsE?si=r5WfAK_LHpKHhFXl)
+
 ## License
 
 See [LICENSE](./LICENSE).
