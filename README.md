@@ -41,6 +41,7 @@ The idea in one sentence: instead of re-deriving knowledge from raw sources ever
 
 ## Requirements
 - [Claude Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) with an active Claude license
+- [Node.js](https://nodejs.org) — required by the filesystem MCP server (`@modelcontextprotocol/server-filesystem`) that gives Claude read/write access to your vault. Claude Desktop launches it with `npx`, which ships with Node. Verify by running `node --version` in your terminal; if that fails, install from [nodejs.org](https://nodejs.org).
 
 ## Recommended
 - A [GitHub](https://github.com/) account. Useful for backing up your McBrain.

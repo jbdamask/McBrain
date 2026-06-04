@@ -200,6 +200,7 @@ are also called out in the step descriptions.
 
 ## What this skill does
 
+0. Confirms system requirements (Node.js, needed by the vault's filesystem MCP)
 1. Names the vault and confirms its location
 2. Sets up backup strategy — and if Git, creates the remote repo before any files exist
 3. Creates the directory structure and initializes the vault
@@ -363,6 +364,59 @@ equivalent here. When a later step refers to "App Support / config" or
 | Hidden-folder reveal in folder picker | Cmd-Shift-. | Already visible; navigate via address bar |
 | Type-a-path shortcut in folder picker | Cmd-Shift-G | Address bar (Ctrl-L in Explorer) |
 | GitHub CLI install | `brew install gh` | `winget install --id GitHub.cli` |
+| Node.js install | `brew install node` (or download from [nodejs.org](https://nodejs.org)) | `winget install --id OpenJS.NodeJS` (or download from [nodejs.org](https://nodejs.org)) |
+
+---
+
+## Step 0.5: Confirm system requirements
+
+McBrain needs one tool installed on the user's host that does **not** come
+with Claude Desktop: **Node.js**. The filesystem MCP server that gives
+Claude read/write access to the vault (`@modelcontextprotocol/server-filesystem`,
+configured in Step 5) is launched by Claude Desktop with `npx`, which ships
+with Node. **Without Node.js, the vault MCP will not start and McBrain will
+not work** — so confirm it *before* building anything.
+
+**You cannot detect this from inside Cowork.** The Bash tool runs in the
+Linux sandbox, not on the user's host, so running `node --version` yourself
+tells you nothing about their machine (and may report a false positive from
+the sandbox). Do **not** run the check yourself. Instead, hand the user the
+check command and trust their answer — the same pattern the GitHub CLI uses.
+
+Present this to the user (it's the same command on Mac and Windows; they run
+it in **Terminal** on macOS or **PowerShell** on Windows):
+
+```
+node --version
+```
+
+Then ask with `AskUserQuestion`:
+
+```yaml
+questions:
+  - question: "Run `node --version` in your Terminal (Mac) or PowerShell (Windows). Did it print a version number (e.g. v22.x.x)?"
+    header: "Node.js"
+    multiSelect: false
+    options:
+      - label: "Yes, it printed a version"
+        description: "Node.js is installed. Good to proceed."
+      - label: "No / command not found"
+        description: "Node.js is missing and needs to be installed first."
+```
+
+- If **yes** → Node is present; continue to Step 1.
+- If **no / command not found** → Node.js is missing. Give the user the
+  install command for their `OS_TYPE` from the "Node.js install" row of the
+  reference table above, and ask them to run it (or download the installer
+  from [nodejs.org](https://nodejs.org)). After installing, have them re-run
+  `node --version` to confirm, then continue. Don't try to install Node
+  yourself via the Bash tool — that installs into the sandbox, not the host.
+
+> **Other tools are conditional, not universal.** `git` and the GitHub CLI
+> (`gh`) are only needed if the user picks the **Git + GitHub** backup
+> strategy in Step 2 — that step handles checking and installing them, so
+> don't ask about them here unless the user has already said they want Git
+> backup. Node.js is the only requirement every McBrain vault needs.
 
 ---
 
