@@ -1,6 +1,6 @@
 ---
 name: mcbrain-setup
-description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. THIS IS NOT A PLUGIN-BUILDER FLOW — the McBrain plugin is already built and shipped; this skill only provisions a new vault using the existing plugin. Do NOT render an intake card with project-type selectors ("Home maintenance", "Renovation & projects", etc.), do NOT ask "What will this McBrain be for?", do NOT ask "Which skills/commands would you like included?", and do NOT title the tab "Create new McBrain X variant" — those are plugin-builder behaviors and do not apply to McBrain setup. Use plain conversational Q&A; the complete list of inputs to gather is in the SKILL's "Required intake" section. Handles vault directory scaffolding, the CLAUDE.md schema, and the filesystem MCP config block. Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
+description: One-shot setup skill for McBrain — a persistent personal knowledge base built on Karpathy's LLM Wiki pattern, viewed in Obsidian and maintained by Claude. ALWAYS use this skill (do NOT use Cowork's built-in plugin-builder feature) when the user wants to set up McBrain, set up an LLM wiki, build a personal knowledge base, create a second brain with Claude, integrate Obsidian with Claude, or give Claude persistent memory. Also use this skill when the user says any of "create a new McBrain", "create a new mcbrain instance", "set up another McBrain", "add another mcbrain", "spin up a new mcbrain-X", "make a new knowledge base", "new mcbrain for X", or any variation on creating an additional or first McBrain. THIS IS NOT A PLUGIN-BUILDER FLOW — the McBrain plugin is already built and shipped; this skill only provisions a new vault using the existing plugin. Do NOT render an intake card with project-type selectors ("Home maintenance", "Renovation & projects", etc.), do NOT ask "What will this McBrain be for?", do NOT ask "Which skills/commands would you like included?", and do NOT title the tab "Create new McBrain X variant" — those are plugin-builder behaviors and do not apply to McBrain setup. Use plain conversational Q&A; the complete list of inputs to gather is in the SKILL's "Required intake" section. Handles vault directory scaffolding, the CLAUDE.md schema, and the single mcbrain registry MCP (one server for all vaults, backed by ~/.mcbrain/registry.json). Do NOT generate a generic filesystem-MCP plugin in place of this skill — McBrain has its own structure (raw/, wiki/, CLAUDE.md schema) that a plain filesystem MCP doesn't provide. Run this once per vault to bootstrap; the companion `mcbrain` skill handles day-to-day operations thereafter.
 ---
 
 # McBrain Setup
@@ -112,7 +112,7 @@ The McBrain plugin is **already built and shipped**. This SKILL only
 provisions a new *vault* using the existing plugin. There is no
 per-vault customization, no "project type" axis, no per-vault skills
 to pick. Every McBrain vault has the same structure (`raw/`, `wiki/`,
-`CLAUDE.md`, the same MCP config) regardless of topic.
+`CLAUDE.md`, the same registry entry) regardless of topic.
 
 If your UI is about to render any of the following, **STOP** — that's
 Cowork's plugin-builder hijacking the flow, not this SKILL:
@@ -200,11 +200,11 @@ are also called out in the step descriptions.
 
 ## What this skill does
 
-0. Confirms system requirements (Node.js, needed by the vault's filesystem MCP)
+0. Confirms system requirements (Node.js, needed by the mcbrain MCP server)
 1. Names the vault and confirms its location
 2. Sets up backup strategy — and if Git, creates the remote repo before any files exist
 3. Creates the directory structure and initializes the vault
-4. Writes the MCP filesystem config block for Claude Desktop
+4. Installs the single mcbrain MCP server (once) and registers the vault in `~/.mcbrain/registry.json`
 5. Walks through Obsidian and browser extension setup
 6. Verifies everything works
 
@@ -262,10 +262,10 @@ explicit:
    `%LOCALAPPDATA%\` (Windows). Be explicit when asking: tell the user
    exactly which folder to select and why.
 
-3. **MCP servers (including the filesystem MCPs Claude Desktop registers)
+3. **MCP servers (including the mcbrain MCP Claude Desktop registers)
    run natively on the user's host machine**, not in the sandbox. They
-   have full host filesystem access. That's why the filesystem MCP can
-   reach the user's vault: Claude Desktop launches it natively even though
+   have full host filesystem access. That's why the mcbrain MCP can
+   reach the user's vaults: Claude Desktop launches it natively even though
    the chat session lives in a sandbox.
 
 **Operational rule of thumb:**
@@ -380,7 +380,7 @@ them later.
 | Tool | Needed for | Required? | Check command |
 |---|---|---|---|
 | **Claude Desktop (Cowork)** | running this setup | Always | (you're already in it) |
-| **Node.js** | the vault's filesystem MCP (`npx` launches it) | **Always** | `node --version` |
+| **Node.js** | the mcbrain MCP server (Claude Desktop launches it with `node`) | **Always** | `node --version` |
 | **git** + **GitHub CLI (`gh`)** | the Git + GitHub backup option (recommended) | Only if you pick Git backup in Step 2 | `git --version` / `gh --version` |
 
 **Include the install commands for the user's detected `OS_TYPE` (from
@@ -423,7 +423,7 @@ user the command and trust their answer.
 
 ### Confirm Node.js now (mandatory gate)
 
-**Without Node.js, the vault MCP will not start and McBrain will not work**,
+**Without Node.js, the mcbrain MCP server will not start and McBrain will not work**,
 so this one must pass before you continue. Have the user run, in **Terminal**
 (macOS) or **PowerShell** (Windows) — same command on both:
 
@@ -711,9 +711,10 @@ For Git:
 
 ### How Claude handles git for this vault
 
-**Claude must not run git commands against this vault.** The vault is mounted via the filesystem MCP, which holds open handles that race with git. When Claude (operating through the vault MCP) runs `git add` / `git commit` / `git push`, the call can leave a stale `.git/index.lock` file that the user has to remove manually before any further git work succeeds. Bad UX.
+The rule depends on where Claude is running:
 
-Instead, after meaningful operations (ingest, lint, batch synth), Claude **presents** the commands to the user as a copy-paste block. The user runs them in their own terminal:
+- **Claude Code**: Claude may run git directly against this vault. After meaningful operations (ingest, lint, batch synth), run `git add` / `git commit` / `git push` yourself and tell the user what was committed.
+- **Cowork / Claude Desktop**: Claude **presents** the commands as a copy-paste block — the sandbox cannot run processes on the host. The user runs them in their own terminal:
 
 \`\`\`
 cd VAULT_PATH && git add -A && git commit -m "<message>" && git push origin main
@@ -722,8 +723,8 @@ cd VAULT_PATH && git add -A && git commit -m "<message>" && git push origin main
 Mirror the log entry in the commit message: `ingest: <source title>`, `lint: <summary>`, `synth: <topic>`. Good commit messages are short and describe the operation, not the diff.
 
 ### Recovery
-- To revert a bad edit, present: `cd VAULT_PATH && git log --oneline` to find the commit, then `git checkout <hash> -- wiki/<filename>.md`.
-- If a stale `.git/index.lock` exists from a prior interrupted run, present: `rm VAULT_PATH/.git/index.lock`.
+- To revert a bad edit: `cd VAULT_PATH && git log --oneline` to find the commit, then `git checkout <hash> -- wiki/<filename>.md`.
+- (Legacy) If a stale `.git/index.lock` remains from the pre-5.0 per-vault filesystem MCP era: `rm VAULT_PATH/.git/index.lock`.
 ```
 
 When you write this section into the actual `CLAUDE.md`, replace the literal placeholder `VAULT_PATH` with the user's confirmed path and unescape the backticks around the fenced code block (i.e. write a real triple-backtick fence, not the `\`\`\`` shown above — the escape is only there to avoid breaking *this* skill's markdown).
@@ -749,10 +750,9 @@ For None:
 ### Initialize git (Git strategy only) — *user runs this in Terminal*
 
 You should not run `git init`, `git remote add`, `git commit`, or `git push`
-from Cowork — Cowork's Bash sandbox doesn't reach the user's vault path,
-and even if it did, those calls would race with the vault's filesystem MCP
-and leave a stale `.git/index.lock`. Same rule applies in Claude Code: do
-not invoke git against the vault yourself.
+from Cowork — Cowork's Bash sandbox doesn't reach the user's vault path.
+(In Claude Code, where Bash runs natively on the host, you may run these
+git commands against the vault yourself.)
 
 First, **write the `.gitignore` yourself** — that's a file operation, you
 can do it via the Write tool against the granted vault directory. The file
@@ -802,13 +802,83 @@ Open [drive.google.com](https://drive.google.com) in a browser and confirm `CLAU
 
 ---
 
-## Step 5: Configure filesystem MCP in Claude Desktop
+## Step 5: Install the mcbrain MCP server and register the vault
 
-The filesystem MCP gives Claude read/write access to the vault. It's
-registered in Claude Desktop's config file:
+McBrain uses **one MCP server for all vaults**: `mcbrain`, a registry +
+file gateway backed by `~/.mcbrain/registry.json`. It is installed **once
+ever**; every subsequent vault is just a new line in the registry file.
+This step has three parts:
+
+- **5a** — copy the server to `~/.mcbrain/mcp-server/server.js` (every run; doubles as the upgrade path)
+- **5b** — add this vault to `~/.mcbrain/registry.json` (every run)
+- **5c** — add the `mcbrain` entry to `claude_desktop_config.json` (**first install only** — skip entirely if the user already has it)
+
+### 5a: Copy the server into place
+
+1. Call `mcp__cowork__request_cowork_directory` for the user's home
+   directory (`~`). You need it to create `~/.mcbrain/`.
+2. Read the plugin's bundled server at `mcp-server/server.js` (relative to
+   this plugin's root — it ships alongside the `skills/` directory).
+3. Write it to `~/.mcbrain/mcp-server/server.js` on the granted mount
+   **with the Write tool** (never `cp` via Bash — see the sandbox rules at
+   the top of this file).
+
+Do this on **every** setup run, even if the file already exists —
+re-copying is how the server gets upgraded when the plugin updates.
+
+### 5b: Register the vault in the registry file
+
+The registry is `~/.mcbrain/registry.json`, shaped like:
+
+```json
+{
+  "vaults": [
+    { "name": "MCP_NAME", "path": "VAULT_PATH", "created": "<ISO timestamp>" }
+  ]
+}
+```
+
+**Read-merge-Write — never clobber existing entries:**
+
+1. Read `~/.mcbrain/registry.json`. If it doesn't exist, start from
+   `{"vaults": []}`.
+2. Append `{ "name": MCP_NAME, "path": VAULT_PATH, "created": <now, ISO 8601> }`
+   to the `vaults` array. If an entry with the same name already exists,
+   ask the user before replacing it. **Never drop other vaults' entries.**
+3. Write the merged file back with the Write tool.
+
+Do **not** call the `register_vault` MCP tool from this setup flow: on a
+first install the `mcbrain` MCP isn't loaded yet (it only loads after the
+Claude Desktop restart in 5c, which ends this conversation). Writing the
+file directly works in every case. `register_vault` / `unregister_vault`
+exist for chat-driven management *after* setup.
+
+### 5c: Claude Desktop config — first install only
+
+The `mcbrain` server is registered in Claude Desktop's config file:
 
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**First, ask whether this is needed at all.** Call `AskUserQuestion`:
+
+```yaml
+questions:
+  - question: "Does your Claude Desktop config already have a \"mcbrain\" entry under mcpServers? (It would, if you've set up any McBrain vault since v5.0.)"
+    header: "mcbrain MCP"
+    multiSelect: false
+    options:
+      - label: "Yes, already there"
+        description: "I've set up a McBrain vault before with the single mcbrain server. Skip the config edit."
+      - label: "No / not sure"
+        description: "First McBrain on this machine (or last set up before v5.0). Walk me through adding it."
+```
+
+If **yes** → skip the rest of 5c; the vault you registered in 5b is
+already reachable (a Desktop restart picks up registry changes on the
+next `list_vaults` call — no config edit needed).
+
+If **no / not sure** → hand them the snippet below.
 
 > ### ⛔ DO NOT edit this file yourself
 >
@@ -820,35 +890,20 @@ registered in Claude Desktop's config file:
 > hand it to the user to paste in themselves.** This is the one step where
 > the human edits the file, not you.
 
-### What to give the user
-
-First substitute the real values:
-
-- **`MCP_NAME`** → the vault's MCP name (e.g. `mcbrain-finance`).
-- **`VAULT_PATH`** → the absolute vault path. **Windows only:** escape every
-  backslash for JSON — `C:\Users\Sam\Documents\mcbrain-finance` becomes
-  `C:\\Users\\Sam\\Documents\\mcbrain-finance`. (macOS paths need no
-  escaping.)
-
-Because you can't see the user's current config, you don't know whether
-they already have other MCP servers. So give them **both** versions below
-and let them pick — make it unmistakable which applies to them.
+Substitute **`<HOME>`** with the user's absolute home directory (e.g.
+`/Users/sam` or `C:\\Users\\Sam` — **Windows only:** escape every backslash
+for JSON). The snippet is **vault-independent**: it never changes, no
+matter how many vaults the user creates.
 
 **Version A — the config file is new or has no `mcpServers` section yet.**
-*(If the file doesn't exist, they create it; if it exists but has no
-`mcpServers` key, this is the whole file.)* Paste this as the entire file
-contents:
+Paste this as the entire file contents:
 
 ```json
 {
   "mcpServers": {
-    "MCP_NAME": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "VAULT_PATH"
-      ]
+    "mcbrain": {
+      "command": "node",
+      "args": ["<HOME>/.mcbrain/mcp-server/server.js"]
     }
   }
 }
@@ -856,39 +911,13 @@ contents:
 
 **Version B — you already have MCP servers in this file.** Do **not** replace
 anything. Add just this one entry *inside* the existing `"mcpServers": { … }`
-block, alongside the servers already there. Put a **comma** after the
-previous entry's closing `}` so the JSON stays valid:
+block, with a **comma** after the previous entry's closing `}`:
 
 ```json
-    "MCP_NAME": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "VAULT_PATH"
-      ]
+    "mcbrain": {
+      "command": "node",
+      "args": ["<HOME>/.mcbrain/mcp-server/server.js"]
     }
-```
-
-For example, a file that already had one server ends up looking like:
-
-```json
-{
-  "mcpServers": {
-    "some-existing-server": {
-      "command": "npx",
-      "args": ["-y", "some-other-package"]
-    },
-    "MCP_NAME": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "VAULT_PATH"
-      ]
-    }
-  }
-}
 ```
 
 ### Walk the user through editing the file
@@ -913,6 +942,27 @@ Give them these steps for their `OS_TYPE`:
 Then ask the user to confirm they pasted and saved before you move on. You
 verify it actually worked in **Step 7**, not here.
 
+*(Claude Code users don't need any of 5c: the plugin ships `.mcp.json`,
+which registers the `mcbrain` server automatically on plugin install.)*
+
+---
+
+## Step 5.5: Migrate legacy vaults (first install only)
+
+If the user had McBrain vaults from before v5.0, their config file still
+has one `mcbrain-<topic>` filesystem-MCP entry per vault. Those vaults
+aren't in the registry yet. Tell the user:
+
+> "If you had McBrain vaults before this upgrade, start a new conversation
+> after the restart and say **'migrate my old McBrain vaults'**. I'll call
+> the mcbrain server's `migrate_config` tool, which scans your Claude
+> Desktop config, imports every legacy `mcbrain-*` vault into the registry,
+> and lists exactly which old `mcpServers` entries you can delete by hand.
+> It never edits the config file itself."
+
+Skip this step entirely on subsequent vault setups or when the user has no
+pre-5.0 vaults.
+
 ---
 
 ## Step 6: Extensions and Obsidian setup
@@ -933,7 +983,7 @@ verify it actually worked in **Step 7**, not here.
    - **Dataview** (community) — queryable YAML frontmatter
    - **Graph View** (built-in) — see the shape of the vault
    - **Marp** (community) — optional, for slide deck output
-7. **Restart Claude Desktop** after editing the MCP config so the filesystem server loads
+7. **Restart Claude Desktop** after editing the MCP config (first install only) so the mcbrain server loads
 
 ---
 
@@ -941,11 +991,15 @@ verify it actually worked in **Step 7**, not here.
 
 After the user restarts Claude Desktop, tell them to start a new conversation and say:
 
-> "Using the MCP_NAME MCP, read CLAUDE.md and tell me the wiki structure."
+> "Using the mcbrain MCP, list my vaults and read CLAUDE.md from MCP_NAME."
 
-If Claude can read `CLAUDE.md`, the MCP is working. If not, troubleshoot:
+This exercises both halves of the server: `list_vaults` (the registry)
+and `read_file` (the file gateway). If Claude lists the vault and reads
+`CLAUDE.md`, everything is working. If not, troubleshoot:
 - Node.js is installed (`node --version`)
-- The config JSON is valid (no trailing commas, correct path)
+- The config JSON is valid (no trailing commas, correct `<HOME>` path)
+- `~/.mcbrain/mcp-server/server.js` and `~/.mcbrain/registry.json` exist
+  and the registry lists the vault with the right absolute path
 - Claude Desktop was fully restarted (quit from menu bar, not just closed)
 
 ---
@@ -1027,7 +1081,7 @@ After this, continue at Step 9.
 
 ## Step 9: Install the companion operating skill
 
-Point the user at the `mcbrain` skill for day-to-day ingest/query/lint operations. It uses the `MCP_NAME` convention to route requests to the right vault — so "find insights from McBrain AI Science" maps to the `mcbrain-ai-science` MCP automatically.
+Point the user at the `mcbrain` skill for day-to-day ingest/query/lint operations. It routes requests to the right vault through the registry — so "find insights from McBrain AI Science" maps to the registered `mcbrain-ai-science` vault automatically (via `list_vaults`, or a direct read of `~/.mcbrain/registry.json` in Claude Code).
 
 ---
 
@@ -1043,7 +1097,7 @@ Claude will read the source, discuss key points, write wiki pages in `wiki/`, up
 **For PDFs:**
 1. Upload the PDF into the chat
 2. Claude invokes Cowork's built-in `pdf` skill — handles extraction, page rendering, and visual inspection automatically
-3. Claude saves extracted text to `raw/papers/<name>.md` via the vault MCP
+3. Claude saves extracted text to `raw/papers/<name>.md` in the vault (mcbrain `write_file`, native Write, or granted mount, depending on surface)
 4. Claude describes substantive figures as prose under `## Figure N — [Title]` headings
 5. Normal ingest proceeds
 

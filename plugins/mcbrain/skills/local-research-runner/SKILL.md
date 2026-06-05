@@ -9,7 +9,7 @@ Drain the "To do" queue of a local JSONL research tracker (the kind initialized 
 
 ## Prerequisites
 
-- The vault must be a McBrain vault — exposed as a filesystem MCP server named `mcbrain-<topic>` (or `mcbrain` for a single default vault).
+- The vault must be a McBrain vault — registered in `~/.mcbrain/registry.json` (visible via the `mcbrain` MCP server's `list_vaults` tool). Every `<vault>` path in this skill means the absolute `path` from that registry entry.
 - The vault's `CLAUDE.md` must have `## Research tracker → Backend: local`.
 - The vault must have `raw/research_tasks/tasks.jsonl` (created by `local-research-db`).
 - Python 3 must be available on the user's host (for the atomic-write helper). No third-party packages, no extra CLI tools (no `flock(1)`, no `lockfile`, no `filelock`). Standard library is enough on macOS, Linux, and Windows alike.
@@ -35,6 +35,8 @@ Every modification of `tasks.jsonl` (claim, status flip, `notes_path` write) goe
 - Wrap acquire/release in `try/finally`.
 
 This works on macOS, Linux, and Windows out of the box — Python stdlib only.
+
+**The lock-and-replace cycle does NOT go through the mcbrain gateway tools.** The atomic claim/lock protocol requires host-reachable file semantics — `os.open` with `O_EXCL`, `os.fsync`, `os.replace` — which means a granted mount in Cowork or the native filesystem in Claude Code. The `mcbrain` MCP server's `read_file`/`write_file`/`edit_file` tools are deliberately not used here: the gateway has no lock or rename primitives, so it cannot implement this protocol. Only vault *discovery* (finding the vault's absolute path via `list_vaults` / the registry) changed in this skill; the atomicity story is unchanged.
 
 **Why a lock at all:** even though today the parent runner does all writes (subagents return findings; only the runner mutates JSONL), nothing prevents two runner sessions running in two terminals against the same vault — or a future architecture where parallel agents claim and update rows directly. Without the lock, two readers can claim the same row and silently produce duplicate research. The lock is cheap (sub-second cycles) and forward-compatible.
 
@@ -130,7 +132,7 @@ End with a one-line note that the standard ingest flow will pick the new files u
 ## Failure Modes to Handle
 
 - **Subagent malformed output** (missing one of the five sections, missing Sources, wrong headings). Ask it once to reformat; if it fails again, **do not** write the markdown file and **do not** flip status to Done. Leave the row at `In progress` so a future runner invocation (or a follow-up by the user) can detect and retry. Surface the malformed output to the user verbatim so it isn't lost.
-- **Markdown file write fails** (filesystem MCP returns an error). Same outcome as malformed output: row stays at `In progress`, surface the failure to the user.
+- **Markdown file write fails** (the host filesystem write errors — permissions, missing directory, revoked Cowork mount). Same outcome as malformed output: row stays at `In progress`, surface the failure to the user.
 - **JSONL update fails after the markdown file was already written** (rare, e.g. lock timeout). The markdown file exists at `raw/notes/research-<topic-slug>-<task-id>.md`, but the row still says `In progress` with no `notes_path`. Tell the user this orphan exists — they can re-run the runner, which should detect orphaned `In progress` rows whose expected markdown file already exists and offer to reconcile (set `notes_path` and flip to Done without re-researching).
 - **Lock timeout (`LockTimeout`).** Another runner is likely active, or a previous runner crashed leaving an orphaned lock file. Surface the exact error message from the helper, which already tells the user what to do (delete `tasks.jsonl.lock` manually after confirming no other runner is running).
 - **Runner killed mid-claim (between acquiring the lock in Phase 1 and writing in Phase 2).** Rows were never rewritten — they stay at `To do`. The lock file may be orphaned; next runner will time out and surface the manual-delete message. No half-state in the data file.

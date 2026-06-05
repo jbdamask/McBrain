@@ -10,11 +10,11 @@ A personal knowledge base maintained by Claude. Raw sources live in `raw/`. Clau
 
 Three layers, three jobs:
 
-- **CLAUDE.md** — Claude's operating manual for this vault: schema, page conventions, ingest/query/lint procedures, backup config, MCP plumbing, and registered companion systems. Anything Claude needs to *do its job* lives here.
+- **CLAUDE.md** — Claude's operating manual for this vault: schema, page conventions, ingest/query/lint procedures, backup config, registry plumbing, and registered companion systems. Anything Claude needs to *do its job* lives here.
 - **`raw/`** — immutable source documents. Inputs.
 - **`wiki/`** — compiled knowledge derived from `raw/`. Concept pages, entity pages, syntheses. Every page has provenance (`sources:` frontmatter pointing back to `raw/`).
 
-The rule: **if Claude needs it to do its job, it lives in CLAUDE.md; if it's a fact about the world derived from a source, it lives in `wiki/`.** Plumbing (the git remote, the MCP path) does not belong in `wiki/` — wiki pages have provenance and citations, plumbing doesn't. When in doubt, ask which question the content answers: *"how do I operate this vault?"* (CLAUDE.md) vs *"what do we know about X?"* (`wiki/`).
+The rule: **if Claude needs it to do its job, it lives in CLAUDE.md; if it's a fact about the world derived from a source, it lives in `wiki/`.** Plumbing (the git remote, the vault's `~/.mcbrain/registry.json` entry) does not belong in `wiki/` — wiki pages have provenance and citations, plumbing doesn't. When in doubt, ask which question the content answers: *"how do I operate this vault?"* (CLAUDE.md) vs *"what do we know about X?"* (`wiki/`).
 
 ## Directory layout
 

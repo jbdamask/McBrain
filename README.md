@@ -5,6 +5,14 @@
 An easy-to-use tool for making personal knowledge bases in Claude Cowork. It's based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 
 > [!IMPORTANT]
+> **Upgrading to 5.0.0?** Plugin 5.0.0 replaces the per-vault filesystem MCP servers with a **single `mcbrain` MCP server** that acts as a vault registry + file gateway, backed by `~/.mcbrain/registry.json`. Your vaults' files are untouched, but vault discovery changes. To upgrade:
+>
+> 1. **Install the mcbrain server**: re-run `mcbrain-setup` (it copies the server to `~/.mcbrain/mcp-server/server.js` and hands you the one static config snippet), or add this to `claude_desktop_config.json` yourself: `"mcbrain": {"command": "node", "args": ["<HOME>/.mcbrain/mcp-server/server.js"]}`. Restart Claude Desktop.
+> 2. **Migrate your old vaults**: in a new conversation, say *"migrate my old McBrain vaults"*. Claude calls the server's `migrate_config` tool, which scans your config, imports every legacy `mcbrain-*` filesystem-MCP vault into the registry, and lists exactly which `mcpServers` entries you can now delete by hand (it never edits the config itself).
+> 3. **Delete the per-vault `mcbrain-*` entries** it listed. Keep the single `mcbrain` entry.
+>
+> Bonus: with no per-vault filesystem MCPs holding file handles, the old "Claude must not run git against the vault" rule is relaxed — in Claude Code, Claude may now run git directly. Existing vaults' `CLAUDE.md` files keep the old rule until you ask Claude to refresh that section.
+>
 > **Upgrading to 4.0.0?** Plugin 4.0.0 removes the hybrid lexical+semantic search engine (the `mcbrain-engine` MCP and the `mcbrain-ops` skill). Query against the wiki now reads `wiki/index.md` and follows `[[wikilinks]]` instead of calling a search tool. No migration tooling is provided — your existing vaults will keep working, but the `## Query engine` section in their `CLAUDE.md` (and any references to `mcbrain-engine` MCP tools) becomes inert. Two paths:
 >
 > 1. **Upgrade**: install 4.0.0 and accept the wiki-index-only Query flow. You may want to delete the `## Query engine` section and rewrite `### Query` in each vault's `CLAUDE.md` so Claude doesn't try to call tools that no longer exist; the templates in this version of `mcbrain-setup` show the new shape. You can also uninstall the `mcbrain-engine` MCP from your `claude_desktop_config.json` and delete the runtime directory at `~/Library/Application Support/mcbrain-engine/` (macOS) or `%LOCALAPPDATA%\mcbrain-engine\` (Windows).
@@ -41,7 +49,7 @@ The idea in one sentence: instead of re-deriving knowledge from raw sources ever
 
 ## Requirements
 - [Claude Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) with an active Claude license
-- [Node.js](https://nodejs.org) — required by the filesystem MCP server (`@modelcontextprotocol/server-filesystem`) that gives Claude read/write access to your vault. Claude Desktop launches it with `npx`, which ships with Node. Verify by running `node --version` in your terminal; if that fails, install from [nodejs.org](https://nodejs.org).
+- [Node.js](https://nodejs.org) (>= 18) — runs the bundled `mcbrain` MCP server that gives Claude vault discovery and read/write access. It's a single zero-dependency file launched directly with `node` (no `npx` package download). Verify by running `node --version` in your terminal; if that fails, install from [nodejs.org](https://nodejs.org).
 
 ## Recommended
 - A [GitHub](https://github.com/) account. Useful for backing up your McBrain.
@@ -77,6 +85,21 @@ Each time you have a conversation with Claude about the contents of your McBrain
 ![Use](./img/mcbrain-ai-science.png)
 ![Ingest](./img/ingest.png)
 
+## One MCP server for all vaults
+
+Since 5.0.0, McBrain uses a single MCP server named `mcbrain` instead of one filesystem server per vault. It does two jobs: it's the **vault registry** (which McBrains exist and where they live) and a **path-scoped file gateway** (read/write/edit/list files, but only inside registered vaults). Its nine tools — `list_vaults`, `get_vault`, `register_vault`, `unregister_vault`, `migrate_config`, `read_file`, `write_file`, `edit_file`, `list_dir` — mean any Claude surface (Desktop chat, Cowork, Claude Code) can discover and work with every vault. Claude Code users get the server automatically via the plugin's `.mcp.json`; Desktop/Cowork users add one static config entry, once ever.
+
+Everything lives under `~/.mcbrain/`:
+
+```
+~/.mcbrain/
+├── registry.json          # {"vaults": [{"name": "mcbrain-finance", "path": "...", "created": "..."}]}
+└── mcp-server/
+    └── server.js          # the server (copied here by mcbrain-setup; re-copied on upgrade)
+```
+
+The registry is plain JSON on purpose — Claude Code can read it directly, and you can edit it by hand.
+
 ## Research tracker
 
 Each McBrain vault has a **local research tracker** — JSONL rows in a single file inside the vault at `<vault>/raw/research_tasks/tasks.jsonl`. One topic per row (with a `topic_slug` field), all topics in one file. `mcbrain-setup` Step 8 initializes it, and the choice is recorded in the vault's `CLAUDE.md` under a `## Research tracker` section. The `local-research-runner` skill drains "To do" rows, runs research subagents in parallel, writes one markdown file per completed task to `<vault>/raw/notes/research-<topic-slug>-<task-id>.md`, and flips the row to "Done". The standard ingest flow then picks the new files up alongside Web Clipper / hand-drop notes; no special bridged-ingest mode.
@@ -93,10 +116,10 @@ To add a topic to the tracker, run the **`local-research-db`** skill (or just as
 The `mcbrain` plugin contains four skills, all under [`plugins/mcbrain/skills/`](./plugins/mcbrain/skills):
 
 ### [`mcbrain-setup`](./plugins/mcbrain/skills/mcbrain-setup)
-One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, writes the filesystem MCP config block for Claude Desktop, optionally walks through Obsidian and browser-extension setup (you can skip if you don't use Obsidian — McBrain works against the markdown vault directly), and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
+One-shot setup skill that bootstraps McBrain end-to-end: names the vault, configures a backup strategy, scaffolds the directory structure, installs the single `mcbrain` MCP server (first run only) and registers the vault in `~/.mcbrain/registry.json`, optionally walks through Obsidian and browser-extension setup (you can skip if you don't use Obsidian — McBrain works against the markdown vault directly), and verifies the install. Run this from Claude Cowork each time you want to make a new McBrain.
 
 ### [`mcbrain`](./plugins/mcbrain/skills/mcbrain)
-Day-to-day operating skill for McBrain. Handles ingesting sources into the vault, querying the wiki, filing synthesis pages, and linting. Supports multiple vaults (e.g. `mcbrain-finance`, `mcbrain-ai-science`) by mapping the user's request to the matching MCP filesystem server. Triggered by phrases like "ingest this", "save to mcbrain", "ask my brain", or any reference to the user's wiki / second brain.
+Day-to-day operating skill for McBrain. Handles ingesting sources into the vault, querying the wiki, filing synthesis pages, and linting. Supports multiple vaults (e.g. `mcbrain-finance`, `mcbrain-ai-science`) by mapping the user's request to the matching registry entry (via `list_vaults` or a direct read of `~/.mcbrain/registry.json`). Triggered by phrases like "ingest this", "save to mcbrain", "ask my brain", or any reference to the user's wiki / second brain.
 
 ### [`local-research-db`](./plugins/mcbrain/skills/local-research-db)
 Initializes a local research-task tracker for a McBrain vault — the JSONL file at `<vault>/raw/research_tasks/tasks.jsonl` and the matching `## Research tracker` registration in CLAUDE.md. Use this when you want a research backlog that lives entirely inside the vault, no external services. Run it once per topic to register additional topics on an existing local tracker.
@@ -120,23 +143,33 @@ McBrain/
 │   └── mcbrain/
 │       ├── .claude-plugin/
 │       │   └── plugin.json       # the plugin manifest
+│       ├── .mcp.json             # registers the mcbrain MCP for Claude Code installs
+│       ├── commands/
+│       │   └── mcbrain-setup.md  # /mcbrain-setup slash command
+│       ├── mcp-server/
+│       │   ├── server.js         # the single mcbrain MCP server (registry + file gateway)
+│       │   └── test/
+│       │       └── server.test.js
 │       └── skills/
 │           ├── mcbrain-setup/
 │           ├── mcbrain/
 │           ├── local-research-db/
 │           └── local-research-runner/
+├── tests/                        # pytest suite (research tracker)
 ├── README.md
 └── LICENSE
 ```
 
 ## Running tests
 
-A small pytest suite under [`tests/`](./tests/) covers the local research tracker behavior.
+A small pytest suite under [`tests/`](./tests/) covers the local research tracker behavior, and a `node:test` suite covers the mcbrain MCP server.
 
 ```sh
 python3 -m venv .test-venv
 .test-venv/bin/pip install -r tests/requirements.txt
 .test-venv/bin/python -m pytest tests/ -v
+
+node --test plugins/mcbrain/mcp-server/test/
 ```
 
 See [`tests/README.md`](./tests/README.md) for details.
