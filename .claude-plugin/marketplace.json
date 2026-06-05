@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "McBrain — a persistent, LLM-maintained personal knowledge base built on Karpathy's LLM Wiki pattern.",
-    "version": "4.0.0",
+    "version": "5.0.0",
     "pluginRoot": "./plugins"
   },
   "plugins": [
@@ -14,13 +14,20 @@
       "name": "mcbrain",
       "source": "./plugins/mcbrain",
       "description": "Build and operate McBrain — a personal LLM-maintained knowledge base in Obsidian. Bundles cooperating skills for one-shot vault setup, day-to-day operations (ingest/query/lint/synth), and a local research tracker that drains queued tasks and writes findings back into the vault.",
-      "version": "4.0.0",
+      "version": "5.0.0",
       "author": {
         "name": "John Damask",
         "email": "jbdamask@gmail.com"
       },
       "category": "knowledge-management",
-      "keywords": ["knowledge-base", "obsidian", "wiki", "second-brain", "research", "llm-wiki"]
+      "keywords": [
+        "knowledge-base",
+        "obsidian",
+        "wiki",
+        "second-brain",
+        "research",
+        "llm-wiki"
+      ]
     }
   ]
 }

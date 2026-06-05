@@ -14,7 +14,7 @@ Initialize (or extend) a local research-task tracker for a McBrain vault. The tr
 
 ## Prerequisites
 
-- The vault must be a McBrain vault — exposed as a filesystem MCP server named `mcbrain-<topic>` (or `mcbrain` for a single default vault). The skill writes through that MCP.
+- The vault must be a McBrain vault — registered in `~/.mcbrain/registry.json` and visible via the mcbrain MCP's `list_vaults` tool. The skill writes into the vault at its absolute path from the registry.
 - Python 3 must be available on the user's host (used by `local-research-runner`, not by this skill — but worth surfacing so the user knows the runner will work).
 - No external installations, no extra MCP connectors, no tokens.
 
@@ -27,18 +27,18 @@ That's the entire input set. There is no parent page, no database name, no schem
 
 ## Identifying the McBrain vault
 
-McBrain vaults are exposed as MCP filesystem servers named `mcbrain-<topic>` (or just `mcbrain` for a single default vault). To pick the right one:
+McBrain vaults are registered in `~/.mcbrain/registry.json` (`{"vaults": [{"name", "path", "created"}]}`). To pick the right one:
 
-1. **Enumerate connected MCPs** and collect every server whose name starts with `mcbrain` or `mcbrain-`.
-2. **Zero matches.** No McBrain is connected. Tell the user the tracker can't be set up because there is no vault to write into. Stop.
+1. **List the registered vaults.** In Claude Desktop / Cowork, call the mcbrain MCP's `list_vaults` tool. In Claude Code, read `~/.mcbrain/registry.json` directly.
+2. **Zero matches.** No vault is registered. Tell the user the tracker can't be set up because there is no vault to write into. Stop.
 3. **One match.** Use it. Mention the choice in your confirmation message ("I'll register this tracker with `mcbrain-ai-science`.") so the user can correct you if it's wrong.
 4. **Multiple matches.** Try to infer from the research topic by simple substring/keyword overlap with the vault names — e.g. topic "AI evals literature" → `mcbrain-ai-science` is a much better match than `mcbrain-finance`. Only auto-pick when one candidate is an obvious winner; otherwise ask:
 
-   > *"Which McBrain should this tracker belong to — [list the connected `mcbrain-*` MCPs]?"*
+   > *"Which McBrain should this tracker belong to — [list the registered vault names]?"*
 
    Always confirm an inferred choice with the user before proceeding.
 
-Record the chosen MCP server name; you'll use it in every write below. Operate against that MCP's root — never use absolute filesystem paths.
+Record the chosen vault's name **and** its absolute `path` from the registry; every write below targets files under that path.
 
 ## Row schema (`tasks.jsonl`)
 
@@ -64,7 +64,7 @@ This skill itself does **not** create task rows. It only creates the file (if mi
 
 ## Workflow
 
-Operate against the chosen `mcbrain-*` MCP. Use Read/Write/Edit on paths relative to the MCP root.
+All file operations target the chosen vault's absolute path from the registry. In Claude Desktop, use the mcbrain MCP's gateway tools — `read_file(vault, path)`, `write_file(vault, path, content)`, `edit_file(vault, path, old, new)`, `list_dir(vault, path)` — with vault-relative paths. In Claude Code (or Cowork with a granted folder), use the native Read/Write/Edit tools on `<vault path>/<file>`.
 
 1. **Confirm the topic and vault** with the user (one short turn). State which vault you'll write to and what the topic slug will be.
 
@@ -113,7 +113,7 @@ Operate against the chosen `mcbrain-*` MCP. Use Read/Write/Edit on paths relativ
    - YYYY-MM-DD — registered local tracker topic: <topic> (slug: <topic-slug>)
    ```
 
-6. **Backup.** Re-read CLAUDE.md's `## Backup` section. If `Strategy: git`, **present** the commit/push block to the user as a copy-paste fence — do not run git directly (the filesystem MCP races with git and can leave a stale `.git/index.lock`; see CLAUDE.md's `## Backup → How Claude handles git for this vault`). A good message:
+6. **Backup.** Re-read CLAUDE.md's `## Backup` section. If `Strategy: git`: in Claude Code, Claude may run git directly against the vault (commit and push, with user-visible messages). In Cowork / Claude Desktop, the sandbox cannot run processes on the host, so **present** the commit/push block to the user as a copy-paste fence. A good message:
 
    ```bash
    cd VAULT_PATH && \
@@ -136,7 +136,7 @@ Running this skill twice with the same topic and the same vault should be a no-o
 
 ## Failure modes
 
-- **Vault MCP unavailable.** Stop and tell the user the vault must be reachable to write CLAUDE.md.
+- **Vault unreachable.** The registry lists the vault but its path can't be read/written (mcbrain MCP not connected, or no granted access to the path). Stop and tell the user the vault must be reachable to write CLAUDE.md.
 - **CLAUDE.md is read-only or has an unexpected layout** (no `## Domain` anchor, no place to insert the section). Surface the conflict to the user, show the diff you wanted to apply, and ask them to apply it manually rather than guessing.
 - **Slug collision.** If the slug already exists under a different topic name, ask the user whether the topics are actually the same (re-use existing slug) or different (add a numeric suffix to disambiguate).
 
@@ -144,5 +144,5 @@ Running this skill twice with the same topic and the same vault should be a no-o
 
 - Do **not** create or populate task rows in `tasks.jsonl`. This skill's only writes to `tasks.jsonl` are creating an empty file if one does not exist.
 - Do **not** modify rows in `tasks.jsonl` (status flips, findings updates) — that is the runner's job.
-- Do **not** invoke any MCP tool other than the vault's filesystem MCP.
-- Do **not** run git directly — always present a copy-paste fence.
+- Do **not** invoke any MCP tool other than the single `mcbrain` MCP.
+- Do **not** run git directly in Cowork / Claude Desktop — present a copy-paste fence there. In Claude Code, running git against the vault is fine.

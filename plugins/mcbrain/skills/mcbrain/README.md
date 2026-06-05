@@ -6,7 +6,7 @@ Claude Skill for operating an Obsidian-based personal knowledge base from Claude
 
 Based on Andrej Karpathy's [LLM Wiki](https://x.com/karpathy/status/2039805659525644595) pattern: instead of re-deriving knowledge from raw sources every session, Claude builds and maintains a persistent markdown wiki that compounds over time. Obsidian is the IDE; Claude is the programmer; McBrain is the codebase.
 
-McBrain is designed to be easy to install and use from within **Claude Cowork** (Claude Desktop), but it also works from **Claude Code** in the terminal — the filesystem MCP and the skill work the same way in either host.
+McBrain is designed to be easy to install and use from within **Claude Cowork** (Claude Desktop), but it also works from **Claude Code** in the terminal — the single `mcbrain` MCP server and the skill work the same way in either host.
 
 ## What this skill does
 
@@ -23,16 +23,16 @@ On every operation it updates `wiki/index.md` and appends to `wiki/log.md`, and 
 
 McBrain uses a two-layer design:
 
-1. **This skill** catches the user's intent ("ingest this", "ask my brain", "lint McBrain") and routes to the right vault's MCP filesystem server.
+1. **This skill** catches the user's intent ("ingest this", "ask my brain", "lint McBrain") and routes to the right vault via the registry (`list_vaults` / `~/.mcbrain/registry.json`).
 2. **The vault's `CLAUDE.md`** is the source of truth for directory layout, page conventions, backup strategy, and the canonical procedures for ingest/query/lint.
 
 The skill reads `CLAUDE.md` at the start of every operation, so the vault's conventions travel with the knowledge base and can evolve independently of the skill.
 
 ## Multiple vaults
 
-A user can maintain several McBrain vaults (e.g., `mcbrain-ai-science`, `mcbrain-finance`, `mcbrain-clinical-guidelines`). Each has its own filesystem MCP server, and the skill routes by name:
+A user can maintain several McBrain vaults (e.g., `mcbrain-ai-science`, `mcbrain-finance`, `mcbrain-clinical-guidelines`). Each is an entry in `~/.mcbrain/registry.json`, and the skill routes by registered name:
 
-> "Find insights from McBrain AI Science about sparse attention" → `mcbrain-ai-science` MCP
+> "Find insights from McBrain AI Science about sparse attention" → the `mcbrain-ai-science` vault
 
 If the user says "McBrain" with no qualifier and more than one vault is connected, the skill asks which one.
 
@@ -43,7 +43,7 @@ Setup is a one-time bootstrap handled by the companion skill [`mcbrain-setup`](.
 - Names and locates the vault
 - Creates the directory scaffold (`raw/`, `wiki/`, `CLAUDE.md`)
 - Configures the backup strategy (Git + GitHub, Google Drive, or none)
-- Writes the filesystem MCP block into `claude_desktop_config.json`
+- Installs the single `mcbrain` MCP server and registers the vault in `~/.mcbrain/registry.json`
 - Walks through Obsidian and browser extension setup
 
 Run `mcbrain-setup` once per vault. After that, this operating skill handles everything else.

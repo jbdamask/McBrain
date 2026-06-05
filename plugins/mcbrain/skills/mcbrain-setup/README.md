@@ -8,7 +8,7 @@ Based on Andrej Karpathy's [LLM Wiki](https://x.com/karpathy/status/203980565952
 
 This is the **one-shot setup skill**. Run it once per vault. After that, the companion [`mcbrain`](../mcbrain) skill handles day-to-day operations.
 
-McBrain was designed for **Claude Cowork** (Claude Desktop), but also works from **Claude Code** in the terminal — the filesystem MCP and both skills behave the same way in either host.
+McBrain was designed for **Claude Cowork** (Claude Desktop), but also works from **Claude Code** in the terminal — the single `mcbrain` MCP server and both skills behave the same way in either host.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ Before running this skill, you need:
 - **A Claude account** — required to use Claude Cowork (Claude Desktop) or Claude Code
 - **Claude Cowork (Claude Desktop)** installed — the primary target host. Download at [claude.ai/download](https://claude.ai/download). Claude Code works as an alternative.
 - **Obsidian** installed — the viewer/editor for the vault. Download at [obsidian.md](https://obsidian.md)
-- **Node.js** — required by the filesystem MCP server (`npx` runs it). Install from [nodejs.org](https://nodejs.org) if `node --version` fails.
+- **Node.js** (>= 18) — runs the bundled `mcbrain` MCP server (a single zero-dependency file launched with `node`). Install from [nodejs.org](https://nodejs.org) if `node --version` fails.
 
 Optional, depending on backup choice:
 
@@ -32,9 +32,9 @@ End-to-end bootstrap for a new vault:
 - **Backup strategy** — Git + GitHub (with remote repo created up front), Google Drive, or none
 - **Scaffold** — creates `raw/`, `wiki/`, and the starter files (`index.md`, `log.md`, `overview.md`, `CLAUDE.md`)
 - **CLAUDE.md** — writes the vault's source-of-truth config, including the Web Ingestion Routing and Backup sections
-- **MCP config** — merges the filesystem MCP block into `claude_desktop_config.json`
+- **MCP install** — copies the `mcbrain` server to `~/.mcbrain/mcp-server/` (first run only adds the one static config entry) and registers the vault in `~/.mcbrain/registry.json`
 - **Obsidian + extensions** — walks through Obsidian vault setup, Claude in Chrome, and Obsidian Web Clipper
-- **Verify** — confirms Claude can read `CLAUDE.md` through the new MCP
+- **Verify** — confirms Claude can list vaults and read `CLAUDE.md` through the `mcbrain` MCP
 
 Claude executes the steps it can (directories, files, `git`, `gh repo create`, config merges) and only defers to the user for GUI-only actions, OAuth flows, and decisions like the vault name.
 
@@ -42,7 +42,7 @@ Claude executes the steps it can (directories, files, `git`, `gh repo create`, c
 
 Two-skill split:
 
-1. **`mcbrain-setup`** (this skill) — runs once. Creates the vault, wires up the MCP, configures backup.
+1. **`mcbrain-setup`** (this skill) — runs once. Creates the vault, registers it with the `mcbrain` MCP, configures backup.
 2. **[`mcbrain`](../mcbrain)** — runs every session. Handles ingest, query, lint, and synthesis against the vault the setup skill created.
 
 The vault's `CLAUDE.md` is what ties them together: setup writes it; the operating skill reads it at the start of every operation.
@@ -57,7 +57,7 @@ Picked during setup and recorded under `## Backup` in `CLAUDE.md`:
 
 ## Multiple vaults
 
-Each vault gets its own MCP server named `mcbrain-<topic>` (e.g., `mcbrain-ai-science`, `mcbrain-finance`). Run this setup skill once per vault. The operating skill routes by name, so a user can maintain several vaults side by side without collision.
+Each vault is registered in `~/.mcbrain/registry.json` under a name like `mcbrain-<topic>` (e.g., `mcbrain-ai-science`, `mcbrain-finance`) — all served by the single `mcbrain` MCP server. Run this setup skill once per vault. The operating skill routes by registered name, so a user can maintain several vaults side by side without collision.
 
 ## Raw-sources-first rule
 

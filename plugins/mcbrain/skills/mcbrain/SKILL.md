@@ -5,28 +5,32 @@ description: Operating skill for McBrain — the user's personal LLM-maintained 
 
 # McBrain — Operating Skill
 
-The user maintains one or more personal knowledge bases called **McBrain**. Each vault has its own MCP filesystem server. This skill governs day-to-day operations against any vault.
+The user maintains one or more personal knowledge bases called **McBrain**. All vaults are tracked in a registry file (`~/.mcbrain/registry.json`) and served by a single `mcbrain` MCP server. This skill governs day-to-day operations against any vault.
 
 ## Step 1: Identify which vault the user wants
 
-The user may have multiple McBrain vaults (e.g., "McBrain AI Science", "McBrain Finance", "McBrain Clinical Guidelines"). Each vault has a corresponding MCP server whose name follows the pattern `mcbrain-<topic>` (e.g., `mcbrain-ai-science`, `mcbrain-finance`). A single default vault may just be named `mcbrain`.
+The user may have multiple McBrain vaults (e.g., "McBrain AI Science", "McBrain Finance", "McBrain Clinical Guidelines"). Each vault is registered under a name following the pattern `mcbrain-<topic>` (e.g., `mcbrain-ai-science`, `mcbrain-finance`). A single default vault may just be named `mcbrain`.
 
-From the user's request, determine which vault they mean:
-- If they name a vault explicitly ("McBrain Finance", "my finance brain"), map it to the MCP name by lowercasing and hyphenating: `mcbrain-finance`.
-- If they say "McBrain" with no qualifier and only one vault exists, use `mcbrain`.
-- If ambiguous and multiple vaults are connected, ask: *"Which McBrain vault — [list the connected mcbrain-* MCPs]?"*
+Get the list of registered vaults:
+- **Claude Desktop / Cowork**: call the `mcbrain` MCP's `list_vaults` tool.
+- **Claude Code**: read `~/.mcbrain/registry.json` directly — it's plain JSON of the shape `{"vaults": [{"name", "path", "created"}]}`. (`list_vaults` works here too if the `mcbrain` MCP is loaded.)
 
-Use that MCP for all subsequent operations in this session.
+From the user's request, determine which vault they mean by fuzzy-matching their mention against the registered names:
+- If they name a vault explicitly ("McBrain Finance", "my finance brain"), match it to the registered name — lowercasing and hyphenating gives `mcbrain-finance`.
+- If they say "McBrain" with no qualifier and only one vault is registered, use it.
+- If the mention is ambiguous or matches nothing cleanly, ask: *"Which McBrain vault — [list the registered vault names]?"*
+
+Use that vault's registry entry — its name and absolute path — for all subsequent operations in this session.
 
 ## Step 2: Read CLAUDE.md
 
-Before doing anything else, read the vault's schema file via the identified MCP:
+Before doing anything else, read the vault's schema file:
 
-```
-CLAUDE.md
-```
+- **Claude Desktop**: `read_file(vault, "CLAUDE.md")` via the `mcbrain` MCP.
+- **Claude Code**: native Read at `<vault path from registry>/CLAUDE.md`.
+- **Cowork**: read `CLAUDE.md` from the granted vault folder.
 
-Read this from the vault root — do **not** hardcode an absolute path. The MCP root is the vault.
+Vault paths come from the registry entry — they are absolute paths on the user's machine.
 
 CLAUDE.md is the source of truth for:
 - The vault's directory layout
@@ -36,7 +40,7 @@ CLAUDE.md is the source of truth for:
 
 Follow what CLAUDE.md says — this skill is the trigger and the router, but CLAUDE.md is the spec.
 
-If `CLAUDE.md` is missing or unreadable, stop and tell the user — something is wrong with the MCP setup.
+If `CLAUDE.md` is missing or unreadable, stop and tell the user — something is wrong with the vault registration or setup.
 
 ## Why this two-layer design
 
@@ -64,15 +68,18 @@ After reading CLAUDE.md, check the `## Backup` section for the `Strategy:` value
 
 **Strategy: `git`**
 
-The vault is a git repository, but **Claude must not run git commands against it.** The filesystem MCP holds open handles that race with git and leave stale `.git/index.lock` files when commits are issued through Claude — the user then has to clear the lock manually before any further git work works. CLAUDE.md's `## Backup → How Claude handles git for this vault` section is the source of truth on this; follow it.
+The vault is a git repository. What Claude does about git depends on the surface:
 
-After meaningful operations (ingest, lint, batch synth), **present** the commit/push commands to the user in a copy-paste block — do not execute them. Example:
+- **Claude Code**: Claude **may run git directly** against the vault. After meaningful operations (ingest, lint, batch synth), commit and push, telling the user what was committed (user-visible messages — never silent git).
+- **Cowork / Claude Desktop**: still **present** the commit/push commands in a copy-paste block — do not execute them. The sandbox cannot run processes on the host, so the user runs the block in their own terminal. Example:
 
 ```
 cd <vault_path> && git add -A && git commit -m "<message>" && git push origin main
 ```
 
-Mirror the log entry in the commit message: `ingest: <title>`, `lint: <summary>`, `synth: <topic>`. The user runs the block in their own terminal.
+Mirror the log entry in the commit message: `ingest: <title>`, `lint: <summary>`, `synth: <topic>`.
+
+CLAUDE.md's `## Backup → How Claude handles git for this vault` section is the source of truth; follow it. (Older vaults' CLAUDE.md may still cite a `.git/index.lock` race from the retired per-vault filesystem MCPs — that rationale no longer applies.)
 
 **Strategy: `google-drive`**
 
